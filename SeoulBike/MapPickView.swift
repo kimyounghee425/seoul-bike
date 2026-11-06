@@ -31,7 +31,7 @@ struct MapPickView: View {
                 Annotation("", coordinate: s.coordinate) { StationMarker(bikes: s.bikes) }.annotationTitles(.hidden)
             }
         }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .mapStyle(.standard(pointsOfInterest: .all))
         .mapControls {}
         .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
         .onMapCameraChange(frequency: .onEnd) { ctx in

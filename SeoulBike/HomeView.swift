@@ -87,7 +87,7 @@ struct HomeView: View {
                 .annotationTitles(.hidden)
             }
         }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .mapStyle(.standard(pointsOfInterest: .all))
         .mapControls {}
         // 지도 꾹 누르기 → 그 위치를 출발·도착으로
         // 누르는 위치 추적 + 0.5초 지나면 손 떼기 전에 바로 핀

@@ -31,7 +31,7 @@ struct ResultView: View {
                 .annotationTitles(.hidden)
             }
         }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .mapStyle(.standard(pointsOfInterest: .all))
         .mapControls {}
         .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
         .safeAreaInset(edge: .top) {
