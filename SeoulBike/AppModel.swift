@@ -23,6 +23,8 @@ final class AppModel {
     var stations: [Station] = []
     var stationsUpdatedAt: Date?
     var stationsFailed = false
+    var stationsOffline = false
+    var stationsLoading = false
 
     var origin: Place?        // nil = 내 위치
     var destination: Place?
@@ -36,13 +38,24 @@ final class AppModel {
     }
 
     func loadStations() async {
+        guard !stationsLoading else { return }
+        stationsLoading = true
+        defer { stationsLoading = false }
         do {
             stations = try await StationAPI.fetchAll()
             stationsUpdatedAt = .now
             stationsFailed = false
+            stationsOffline = false
         } catch {
             stationsFailed = true
+            stationsOffline = isOffline(error)
         }
+    }
+
+    // 앱 다시 열 때 1분 넘게 지났으면 자동 갱신
+    func refreshIfStale() async {
+        if let t = stationsUpdatedAt, Date.now.timeIntervalSince(t) < 60 { return }
+        await loadStations()
     }
 
     func set(_ field: Field, _ place: Place) {

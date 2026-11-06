@@ -39,7 +39,10 @@ enum Kakao {
 
     enum Mode: String { case bicycle, walk }
 
-    static func route(_ mode: Mode, from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) async -> Leg {
+    static func route(_ mode: Mode, from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) async throws -> Leg {
+        // 30m 이내는 경로 API가 실패하므로 직선
+        let m = a.distance(to: b)
+        if m < 30 { return Leg(path: [a, b], meters: Int(m), seconds: Int(m / 1.2)) }
         struct R: Decodable {
             struct Route: Decodable { let legs: [L] }
             struct L: Decodable { let properties: P; let steps: [S] }
@@ -50,14 +53,14 @@ enum Kakao {
         }
         var q = ["start_x": "\(a.longitude)", "start_y": "\(a.latitude)", "end_x": "\(b.longitude)", "end_y": "\(b.latitude)"]
         if mode == .bicycle { q["route_mode"] = "SHORTEST" }
-        if let r: R = try? await get("/v2/routing/\(mode.rawValue)", q), let legs = r.route?.legs, !legs.isEmpty {
+        let r: R
+        do { r = try await get("/v2/routing/\(mode.rawValue)", q) } catch let e as URLError { throw e } catch { throw Trip.PlanError.routeFailed }
+        if let legs = r.route?.legs, !legs.isEmpty {
             let pts = legs.flatMap { $0.steps.flatMap { $0.path.points } }.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) }
             return Leg(path: pts, meters: legs.reduce(0) { $0 + $1.properties.distance },
                        seconds: legs.reduce(0) { $0 + $1.properties.time })
         }
-        // 너무 가깝거나 경로 실패 시 직선 + 평균 속도로 대체
-        let m = a.distance(to: b)
-        return Leg(path: [a, b], meters: Int(m), seconds: Int(m / (mode == .walk ? 1.2 : 4.2)))
+        throw Trip.PlanError.routeFailed
     }
 }
 

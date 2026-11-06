@@ -6,6 +6,8 @@ struct SearchView: View {
     @State private var originText = ""
     @State private var destText = ""
     @State private var results: [(Place, Int?)] = []
+    @State private var searched = false
+    @State private var searchOffline = false
     @FocusState private var focused: Field?
     let focus: Field
 
@@ -49,6 +51,7 @@ struct SearchView: View {
                         ForEach(model.recent, id: \.self) { p in row(p, distance: nil) }
                     } else {
                         ForEach(Array(results.enumerated()), id: \.offset) { _, r in row(r.0, distance: r.1) }
+                        if searched && results.isEmpty { empty }
                     }
                 }
             }
@@ -62,10 +65,18 @@ struct SearchView: View {
             focused = focus
         }
         .task(id: query) {
+            searched = false
             guard !query.isEmpty else { results = []; return }
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
-            results = (try? await Kakao.search(query, near: model.location.coordinate)) ?? []
+            do {
+                results = try await Kakao.search(query, near: model.location.coordinate)
+                searchOffline = false
+            } catch {
+                results = []
+                searchOffline = isOffline(error)
+            }
+            searched = true
         }
     }
 
@@ -83,6 +94,20 @@ struct SearchView: View {
         .padding(.horizontal, 16).frame(height: 52)
         .background(Color.grey100, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(focused == field ? Color.brand : .clear, lineWidth: 2))
+    }
+
+    // 피그마 E5
+    private var empty: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(searchOffline ? "인터넷에 연결되지 않았어요" : "검색 결과가 없어요")
+                .font(.system(size: 20, weight: .bold)).foregroundStyle(Color.grey900)
+            Text(searchOffline ? "와이파이나 데이터 연결을 확인해 주세요." : "이름을 조금 짧게 입력해 보세요.\n지도에서 직접 고를 수도 있어요.")
+                .font(.system(size: 15)).foregroundStyle(Color.grey500).lineSpacing(3).padding(.top, 6)
+            if !searchOffline {
+                PrimaryButton(title: "지도에서 선택하기") { model.path.append(.pick(focused ?? focus)) }.padding(.top, 24)
+            }
+        }
+        .padding(.top, 32)
     }
 
     private func row(_ p: Place, distance: Int?) -> some View {

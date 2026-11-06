@@ -21,26 +21,59 @@ struct Trip {
         return ("\(hours)시간권이면 충분해요", "\(hours),000원이고 \(hours * 60 - ride)분 여유 있어요")
     }
 
-    enum PlanError: LocalizedError {
-        case noLocation, noStation, tooClose
-        var errorDescription: String? {
+    // 문구는 피그마 "엣지케이스" E1~E6
+    enum PlanError: Error {
+        case noLocation, farFromOrigin, farFromDestination, tooClose, routeFailed, offline
+
+        var title: String {
             switch self {
-            case .noLocation: "현재 위치를 아직 못 찾았어요"
-            case .noStation: "근처에 자전거가 있는 대여소가 없어요"
-            case .tooClose: "가까워서 걸어가는 게 더 빨라요"
+            case .noLocation: "지금 위치를 알 수 없어요"
+            case .farFromOrigin: "출발지 근처에 대여소가 없어요"
+            case .farFromDestination: "도착지 근처에 대여소가 없어요"
+            case .tooClose: "걸어가는 게 더 빨라요"
+            case .routeFailed: "경로를 불러오지 못했어요"
+            case .offline: "인터넷에 연결되지 않았어요"
             }
+        }
+        var detail: String {
+            switch self {
+            case .noLocation: "위치 권한이 꺼져 있어요.\n출발지를 직접 정하면 바로 찾아 드릴게요."
+            case .farFromOrigin: "가장 가까운 대여소가 1km 넘게 떨어져 있어요.\n출발지를 바꿔서 다시 찾아 주세요."
+            case .farFromDestination: "가장 가까운 대여소가 1km 넘게 떨어져 있어요.\n도착지를 바꿔서 다시 찾아 주세요."
+            case .tooClose: "출발지와 도착지가 같은 대여소를 써요.\n도착지를 바꿔서 다시 찾아 주세요."
+            case .routeFailed: "잠시 문제가 생겼어요.\n조금 뒤에 다시 찾아 주세요."
+            case .offline: "와이파이나 데이터 연결을 확인하고\n다시 찾아 주세요."
+            }
+        }
+        var button: String {
+            switch self {
+            case .noLocation: "출발지 정하기"
+            case .farFromOrigin: "출발지 바꾸기"
+            case .farFromDestination, .tooClose: "도착지 바꾸기"
+            case .routeFailed, .offline: "다시 찾기"
+            }
+        }
+
+        static func from(_ e: Error) -> PlanError {
+            if let p = e as? PlanError { return p }
+            return isOffline(e) ? .offline : .routeFailed
         }
     }
 
+    static let maxWalkToStation = 1000.0 // m
+
     static func plan(_ model: AppModel) async throws -> Trip {
         guard let o = model.originPlace, let d = model.destination else { throw PlanError.noLocation }
+        if model.stations.isEmpty { throw model.stationsOffline ? PlanError.offline : PlanError.routeFailed }
         guard let s = model.nearest(to: o.coordinate, where: { $0.bikes > 0 }),
-              let e = model.nearest(to: d.coordinate) else { throw PlanError.noStation }
+              s.coordinate.distance(to: o.coordinate) <= maxWalkToStation else { throw PlanError.farFromOrigin }
+        guard let e = model.nearest(to: d.coordinate),
+              e.coordinate.distance(to: d.coordinate) <= maxWalkToStation else { throw PlanError.farFromDestination }
         if s.id == e.id { throw PlanError.tooClose }
         async let w1 = Kakao.route(.walk, from: o.coordinate, to: s.coordinate)
         async let b = Kakao.route(.bicycle, from: s.coordinate, to: e.coordinate)
         async let w2 = Kakao.route(.walk, from: e.coordinate, to: d.coordinate)
-        return await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, bike: b, walkFrom: w2)
+        return try await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, bike: b, walkFrom: w2)
     }
 }
 
@@ -59,4 +92,9 @@ extension Trip {
         assert(trip(56).pass.title.hasPrefix("2시간권"))
         assert(trip(176).pass.title.hasPrefix("3시간권으로도"))
     }
+}
+
+func isOffline(_ e: Error) -> Bool {
+    guard let u = e as? URLError else { return false }
+    return [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .cannotConnectToHost, .timedOut].contains(u.code)
 }

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var phase
     var body: some View {
         @Bindable var model = model
         NavigationStack(path: $model.path) {
@@ -20,6 +21,7 @@ struct RootView: View {
                 .toolbar(.hidden, for: .navigationBar)
         }
         .task { await model.loadStations() }
+        .onChange(of: phase) { _, p in if p == .active { Task { await model.refreshIfStale() } } }
         .onAppear {
             model.location.request()
             #if DEBUG
@@ -34,6 +36,7 @@ struct RootView: View {
         let forest = Place(name: "서울숲", address: "성동구 뚝섬로 273", lat: 37.5443, lng: 127.0376)
         switch UserDefaults.standard.string(forKey: "demo") {
         case "result": model.destination = forest; model.path = [.result]
+        case "far": model.destination = Place(name: "가평 자라섬", address: "", lat: 37.8205, lng: 127.5194); model.path = [.result]
         case "search": model.path = [.search(focus: .destination)]
         case "pickOrigin": model.path = [.pick(.origin)]
         case "pickDest": model.path = [.pick(.destination)]
@@ -64,6 +67,7 @@ struct HomeView: View {
             ForEach(visibleStations(model.stations, in: region)) { s in
                 Annotation("", coordinate: s.coordinate) {
                     StationMarker(bikes: s.bikes, selected: s.id == selected?.id)
+                        .opacity(model.stationsOffline ? 0.4 : 1) // 끊긴 동안은 옛 숫자라 흐리게
                         .onTapGesture { withAnimation(.snappy) { pressed = nil; selected = s } }
                 }
                 .annotationTitles(.hidden)
@@ -96,7 +100,9 @@ struct HomeView: View {
                 Button { model.path = [.search(focus: .destination)] } label: { SearchBar() }
                 if model.location.denied { Banner(text: "위치 권한이 꺼져 있어요", action: "설정", onTap: openSettings) }
                 if model.stationsFailed {
-                    Banner(text: "대여소 정보를 못 불러왔어요", action: "다시 시도") { Task { await model.loadStations() } }
+                    Banner(text: model.stationsOffline ? "인터넷 연결이 끊겼어요" : "대여소 정보를 못 불러왔어요", action: "다시 시도") {
+                        Task { await model.loadStations() }
+                    }
                 }
                 ZStack(alignment: .top) {
                     if zoomedOut(region) { Toast(text: "확대하면 대여소가 보여요").padding(.top, 8) }
@@ -151,24 +157,22 @@ private struct SearchBar: View {
 
 private struct RefreshChip: View {
     @Environment(AppModel.self) private var model
-    @State private var loading = false
     var body: some View {
-        Button {
-            Task { loading = true; await model.loadStations(); loading = false }
-        } label: {
+        Button { Task { await model.loadStations() } } label: {
             TimelineView(.periodic(from: .now, by: 30)) { ctx in
                 HStack(spacing: 6) {
-                    if loading { ProgressView().controlSize(.mini) }
+                    if model.stationsLoading { ProgressView().controlSize(.mini) }
                     else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold)) }
                     Text("대여소 업데이트")
-                    Text(agoText(model.stationsUpdatedAt, now: ctx.date)).foregroundStyle(Color.grey500)
+                    Text(model.stationsLoading ? "불러오는 중" : agoText(model.stationsUpdatedAt, now: ctx.date))
+                        .foregroundStyle(Color.grey500)
                 }
             }
             .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.grey700)
             .padding(.horizontal, 14).frame(height: 36)
             .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.1), radius: 4, y: 2)
         }
-        .disabled(loading)
+        .disabled(model.stationsLoading)
     }
 }
 
