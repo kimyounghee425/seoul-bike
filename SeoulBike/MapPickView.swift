@@ -42,7 +42,7 @@ struct MapPickView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .trailing, spacing: 16) {
-                LocateButton(position: $position).padding(.trailing, 16)
+                LocateButton(position: $position, location: model.location, cam: cam).padding(.trailing, 16)
                 panel
             }
         }

@@ -45,7 +45,7 @@ struct ResultView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .trailing, spacing: 16) {
-                LocateButton(position: $position).padding(.trailing, 16)
+                LocateButton(position: $position, location: model.location, cam: cam).padding(.trailing, 16)
                 panel
             }
         }
@@ -127,7 +127,9 @@ struct ResultView: View {
             if let t = trip { withAnimation { position = fit(t) } }
         } catch {
             self.error = Trip.PlanError.from(error)
-            position = .userLocation(fallback: .region(.seoulCityHall)) // 경로 없으면 전국 지도로 축소되는 문제
+            // 경로 없으면 전국 지도로 축소되는 문제, 내 위치로
+            position = .region(.init(center: model.location.coordinate ?? MKCoordinateRegion.seoulCityHall.center,
+                                     span: .init(latitudeDelta: 0.015, longitudeDelta: 0.015)))
         }
     }
 }

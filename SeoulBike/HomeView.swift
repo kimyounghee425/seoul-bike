@@ -124,7 +124,7 @@ struct HomeView: View {
                 HStack(alignment: .bottom) {
                     RefreshChip()
                     Spacer()
-                    LocateButton(position: $position)
+                    LocateButton(position: $position, location: model.location, cam: cam)
                 }
                 .padding(.horizontal, 16).padding(.bottom, selected == nil && pressed == nil ? 8 : 0)
                 bottomPanel
@@ -190,18 +190,22 @@ private struct RefreshChip: View {
     }
 }
 
-// 탭할 때마다: 내 위치 → 내 방향으로 회전 → 북쪽 고정 따라가기
+// 지금 배율과 방향 그대로 내 위치로 이동. 북쪽 정렬은 나침반 버튼 담당
+// iOS 기본 위치 추적(.userLocation)은 기본 위치 표시를 빼서 동작 안 해 내 좌표로 직접 이동
 struct LocateButton: View {
     @Binding var position: MapCameraPosition
+    let location: LocationService
+    let cam: MapCam
+
     var body: some View {
-        let heading = position.followsUserHeading
-        let follow = position.followsUserLocation
-        RoundButton(systemName: heading ? "location.north.line.fill" : follow ? "location.fill" : "location",
-                    active: heading) {
-            withAnimation {
-                if heading { position = .userLocation(fallback: .automatic) }
-                else if follow { position = .userLocation(followsHeading: true, fallback: .automatic) }
-                else { position = .userLocation(fallback: .automatic) }
+        let c = location.coordinate
+        let centered = c != nil && cam.camera.map { $0.centerCoordinate.distance(to: c!) < 30 } == true
+        RoundButton(systemName: centered ? "location.fill" : "location") {
+            guard let c else { location.request(); return }
+            let now = cam.camera
+            withAnimation(.easeInOut(duration: 0.4)) {
+                position = .camera(MapCamera(centerCoordinate: c, distance: now?.distance ?? 2000,
+                                             heading: now?.heading ?? 0, pitch: now?.pitch ?? 0))
             }
         }
     }
