@@ -1,6 +1,6 @@
 name: SeoulBike
 options:
-  bundleIdPrefix: com.kimyonghee
+  bundleIdPrefix: com.ttabi
   deploymentTarget:
     iOS: "17.0"
 configFiles:
@@ -13,7 +13,7 @@ targets:
     sources: [SeoulBike]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.kimyonghee.seoulbike
+        PRODUCT_BUNDLE_IDENTIFIER: com.ttabi.app
         DEVELOPMENT_TEAM: RYT9AL5P9S
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
@@ -25,6 +25,7 @@ targets:
       path: SeoulBike/Info.plist
       properties:
         CFBundleDisplayName: 따비
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocationWhenInUseUsageDescription: 내 주변 따릉이 대여소를 찾고 경로를 안내하는 데 사용해요.
