@@ -84,7 +84,7 @@ struct SearchView: View {
         HStack(spacing: 12) {
             Text(label).font(.system(size: 13)).foregroundStyle(Color.grey500).frame(width: 28, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt).foregroundStyle(promptColor))
-                .font(.system(size: 17)).focused($focused, equals: field).submitLabel(.search)
+                .font(.system(size: 17)).foregroundStyle(Color.grey900).focused($focused, equals: field).submitLabel(.search)
             if focused == field && !text.wrappedValue.isEmpty {
                 Button { text.wrappedValue = ""; if field == .origin { model.origin = nil } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Color.grey400)
