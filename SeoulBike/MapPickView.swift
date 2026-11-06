@@ -15,7 +15,12 @@ struct MapPickView: View {
 
     var body: some View {
         Map(position: $position) {
-            UserAnnotation()
+            if let c = model.location.coordinate {
+                Annotation("", coordinate: c, anchor: .center) {
+                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                }
+                .annotationTitles(.hidden)
+            }
             ForEach(visibleStations(model.stations, in: region)) { s in
                 Annotation("", coordinate: s.coordinate) { StationMarker(bikes: s.bikes) }.annotationTitles(.hidden)
             }

@@ -60,7 +60,12 @@ struct HomeView: View {
     var body: some View {
         MapReader { proxy in
         Map(position: $position) {
-            UserAnnotation()
+            if let c = model.location.coordinate {
+                Annotation("", coordinate: c, anchor: .center) {
+                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                }
+                .annotationTitles(.hidden)
+            }
             if let p = pressed {
                 Annotation("", coordinate: p, anchor: .bottom) { DropPin() }.annotationTitles(.hidden)
             }
@@ -112,6 +117,20 @@ struct HomeView: View {
             .padding(.horizontal, 16)
         }
         .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 16) {
+                HStack(alignment: .bottom) {
+                    RefreshChip()
+                    Spacer()
+                    LocateButton(position: $position)
+                }
+                .padding(.horizontal, 16).padding(.bottom, selected == nil && pressed == nil ? 8 : 0)
+                bottomPanel
+            }
+        }
+    }
+
+    // 대여소 탭, 꾹 누르기 시트. 칩과 현위치 버튼은 그 위에 붙어서 같이 올라감
+    @ViewBuilder private var bottomPanel: some View {
             if let s = selected {
                 PlacePanel(title: s.name, detail: stationDetail(s),
                            place: Place(name: s.name, address: "따릉이 대여소", lat: s.coordinate.latitude, lng: s.coordinate.longitude)) { selected = nil }
@@ -119,15 +138,7 @@ struct HomeView: View {
                 PlacePanel(title: pressedPlace?.name ?? "위치를 찾는 중…",
                            detail: Text(pressedPlace?.address.isEmpty == false ? pressedPlace!.address : " "),
                            place: pressedPlace) { pressed = nil }
-            } else {
-                HStack(alignment: .bottom) {
-                    RefreshChip()
-                    Spacer()
-                    LocateButton(position: $position)
-                }
-                .padding(.horizontal, 16).padding(.bottom, 8)
             }
-        }
     }
 
     // "120m 거리에 자전거 8대 남았어요"

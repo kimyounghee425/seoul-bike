@@ -221,3 +221,32 @@ func agoText(_ d: Date?, now: Date) -> String {
     let m = Int(now.timeIntervalSince(d) / 60)
     return m < 1 ? "방금" : "\(m)분 전"
 }
+
+// iOS 기본 위치 표시는 정확도 낮을 때 큰 오차 원을 그려서 직접 그림. 초록 점 + 바라보는 방향
+struct MyLocationDot: View {
+    let heading: Double? // 지도 회전 보정한 기기 방향(도)
+    var body: some View {
+        ZStack {
+            if let heading {
+                Cone().fill(RadialGradient(colors: [Color.brand.opacity(0.35), Color.brand.opacity(0)],
+                                           center: .center, startRadius: 6, endRadius: 40))
+                    .rotationEffect(.degrees(heading))
+            }
+            Circle().fill(.white).frame(width: 22, height: 22).shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            Circle().fill(Color.brand).frame(width: 14, height: 14)
+        }
+        .frame(width: 80, height: 80)
+        .allowsHitTesting(false)
+    }
+
+    private struct Cone: Shape {
+        func path(in r: CGRect) -> Path {
+            Path { p in
+                let c = CGPoint(x: r.midX, y: r.midY)
+                p.move(to: c)
+                p.addArc(center: c, radius: r.width / 2, startAngle: .degrees(-90 - 30), endAngle: .degrees(-90 + 30), clockwise: false)
+                p.closeSubpath()
+            }
+        }
+    }
+}

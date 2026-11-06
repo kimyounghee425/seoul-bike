@@ -13,7 +13,12 @@ struct ResultView: View {
 
     var body: some View {
         Map(position: $position) {
-            UserAnnotation()
+            if let c = model.location.coordinate {
+                Annotation("", coordinate: c, anchor: .center) {
+                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                }
+                .annotationTitles(.hidden)
+            }
             if let t = trip {
                 MapPolyline(coordinates: t.walkTo.path).stroke(Color.grey600, style: dash)
                 MapPolyline(coordinates: t.bike.path).stroke(Color.brand, style: .init(lineWidth: 6, lineCap: .round, lineJoin: .round))

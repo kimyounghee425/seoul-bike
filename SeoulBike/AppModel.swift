@@ -86,12 +86,14 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     var status: CLAuthorizationStatus = .notDetermined
     var coordinate: CLLocationCoordinate2D?
+    var heading: Double? // 진북 기준 기기 방향(도)
 
     var denied: Bool { status == .denied || status == .restricted }
 
     override init() {
         super.init()
         manager.delegate = self
+        manager.headingFilter = 5
         status = manager.authorizationStatus
     }
 
@@ -99,7 +101,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
         status = m.authorizationStatus
-        if status == .authorizedWhenInUse || status == .authorizedAlways { m.startUpdatingLocation() }
+        if status == .authorizedWhenInUse || status == .authorizedAlways { m.startUpdatingLocation(); m.startUpdatingHeading() }
+    }
+
+    func locationManager(_ m: CLLocationManager, didUpdateHeading h: CLHeading) {
+        heading = h.trueHeading >= 0 ? h.trueHeading : h.magneticHeading
     }
 
     func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
