@@ -29,6 +29,7 @@ final class AppModel {
     var origin: Place?        // nil = 내 위치
     var destination: Place?
     var path: [Screen] = []
+    var homeRegion: MKCoordinateRegion? // 홈에서 마지막으로 보던 지도, 지도에서 선택이 여기서 시작
 
     let location = LocationService()
 

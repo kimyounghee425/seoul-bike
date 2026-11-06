@@ -47,9 +47,14 @@ struct MapPickView: View {
             }
         }
         .onAppear {
+            // 이미 고른 장소가 있으면 그곳, 아니면 홈에서 보던 지도 그대로 (네이버 지도 방식)
             let current = isOrigin ? model.origin : model.destination
             if let c = current?.coordinate {
                 position = .region(.init(center: c, span: .init(latitudeDelta: 0.008, longitudeDelta: 0.008)))
+            } else if let r = model.homeRegion {
+                position = .region(r)
+            } else if let c = model.location.coordinate {
+                position = .region(.init(center: c, span: .init(latitudeDelta: 0.015, longitudeDelta: 0.015)))
             }
         }
         .task(id: region.map { "\($0.center.latitude),\($0.center.longitude)" }) {

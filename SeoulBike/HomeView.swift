@@ -93,7 +93,7 @@ struct HomeView: View {
         )
         }
         .onMapCameraChange(frequency: .continuous) { camera = $0.camera }
-        .onMapCameraChange(frequency: .onEnd) { region = $0.region }
+        .onMapCameraChange(frequency: .onEnd) { region = $0.region; model.homeRegion = $0.region }
         // 위치가 지도보다 늦게 잡히면 기본 위치(시청)에 머무르는 문제, 첫 위치 수신 시 한 번 이동
         .onChange(of: model.location.coordinate == nil, initial: true) { _, missing in
             guard !missing, !centered, let c = model.location.coordinate else { return }
