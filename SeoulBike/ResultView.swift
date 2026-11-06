@@ -26,7 +26,7 @@ struct ResultView: View {
                 Annotation("", coordinate: t.start.coordinate) { MapTag(text: "대여") }.annotationTitles(.hidden)
                 Annotation("", coordinate: t.end.coordinate) { MapTag(text: "반납") }.annotationTitles(.hidden)
                 Annotation("", coordinate: t.destination.coordinate) {
-                    Circle().fill(Color.grey900).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
+                    Circle().fill(Color.pinOrange).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
                 }
                 .annotationTitles(.hidden)
             }

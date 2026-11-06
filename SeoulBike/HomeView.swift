@@ -264,7 +264,7 @@ private struct PlacePanel: View {
 private struct DropPin: View {
     @State private var dropped = false
     var body: some View {
-        Image("PinGreen").resizable().frame(width: 40, height: 56)
+        DropPinShape(color: .pinOrange)
             .offset(y: dropped ? 0 : -16).opacity(dropped ? 1 : 0)
             .onAppear { withAnimation(.spring(duration: 0.35, bounce: 0.4)) { dropped = true } }
     }

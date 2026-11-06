@@ -38,7 +38,7 @@ struct MapPickView: View {
             if region != nil { moved = true }
             region = ctx.region
         }
-        .overlay { CenterPin(label: isOrigin ? "출발" : "도착", dark: !isOrigin) }
+        .overlay { CenterPin(label: isOrigin ? "출발" : "도착") }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 12) {
                 HStack(spacing: 8) { BackPill(); Pill(text: isOrigin ? "출발지 선택" : "도착지 선택"); Spacer(); CompassButton(position: $position, cam: cam) }
@@ -96,17 +96,16 @@ struct MapPickView: View {
     }
 }
 
-// 피그마 "핀 UI 시안" B안 + 라벨. 출발 초록, 도착 검정
+// 피그마 "핀 UI 시안" B안 + 라벨. 출발·도착 모두 주황, 라벨로 구분
 private struct CenterPin: View {
     let label: String
-    let dark: Bool
     var body: some View {
         VStack(spacing: 4) {
             Text(label).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                 .padding(.horizontal, 12).frame(height: 28)
-                .background(Capsule().fill(dark ? Color.grey900 : .brand))
+                .background(Capsule().fill(Color.pinOrange))
                 .shadow(color: .black.opacity(0.2), radius: 3, y: 2)
-            Image(dark ? "PinDark" : "PinGreen").resizable().frame(width: 40, height: 56)
+            DropPinShape(color: .pinOrange)
         }
         // 핀 끝(이미지 위에서 50pt)이 지도 중심에 오도록: 전체 88pt 중 끝은 82pt 지점
         .offset(y: -(82 - 44))

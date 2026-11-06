@@ -11,6 +11,7 @@ extension Color {
     static let grey500 = Color(hex: 0x8B95A1)
     static let grey400 = Color(hex: 0xB0B8C1)
     static let grey100 = Color(hex: 0xF2F4F6)
+    static let pinOrange = Color(hex: 0xFF7A2F) // 도착, 내가 고른 곳 (초록 대여소 마커와 구분)
 
     init(hex: UInt32) {
         self.init(red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
@@ -308,6 +309,34 @@ struct MyLocationDot: View {
                 p.addArc(center: c, radius: r.width / 2, startAngle: .degrees(-90 - 30), endAngle: .degrees(-90 + 30), clockwise: false)
                 p.closeSubpath()
             }
+        }
+    }
+}
+
+// 피그마 "핀 UI 시안" B안. SVG 에셋은 iOS가 흰 테두리를 어긋나게 그려서 코드로 그림 (40x56, 끝이 y 50)
+struct DropPinShape: View {
+    var color: Color = .brand
+    var body: some View {
+        ZStack(alignment: .top) {
+            Ellipse().fill(Color.grey900.opacity(0.18)).frame(width: 14, height: 5).offset(y: 49.5)
+            Teardrop().fill(color).overlay(Teardrop().stroke(.white, lineWidth: 2.5))
+            Circle().fill(.white).frame(width: 12, height: 12).offset(y: 13.5)
+        }
+        .frame(width: 40, height: 56, alignment: .top)
+    }
+
+    private struct Teardrop: Shape {
+        func path(in r: CGRect) -> Path {
+            let sx = r.width / 40, sy = r.height / 56
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { .init(x: r.minX + x * sx, y: r.minY + y * sy) }
+            var path = Path()
+            path.move(to: p(20, 50))
+            path.addCurve(to: p(4, 19.5), control1: p(20, 50), control2: p(4, 32.5))
+            path.addCurve(to: p(20, 3.5), control1: p(4, 10.4), control2: p(11.2, 3.5))
+            path.addCurve(to: p(36, 19.5), control1: p(28.8, 3.5), control2: p(36, 10.4))
+            path.addCurve(to: p(20, 50), control1: p(36, 32.5), control2: p(20, 50))
+            path.closeSubpath()
+            return path
         }
     }
 }
