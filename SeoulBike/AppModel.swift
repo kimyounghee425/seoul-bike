@@ -38,6 +38,17 @@ final class AppModel {
         set { UserDefaults.standard.set(try? JSONEncoder().encode(Array(newValue.prefix(10))), forKey: "recent") }
     }
 
+    private static let cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appending(path: "stations.json")
+
+    // 마지막으로 받은 대여소를 바로 그리고, 최신 숫자는 뒤에서 갱신
+    init() {
+        if let d = try? Data(contentsOf: Self.cacheURL), let s = try? JSONDecoder().decode([Station].self, from: d) {
+            stations = s
+            stationsUpdatedAt = (try? FileManager.default.attributesOfItem(atPath: Self.cacheURL.path)[.modificationDate]) as? Date
+        }
+    }
+
     func loadStations() async {
         guard !stationsLoading else { return }
         stationsLoading = true
@@ -45,6 +56,7 @@ final class AppModel {
         do {
             stations = try await StationAPI.fetchAll()
             stationsUpdatedAt = .now
+            try? JSONEncoder().encode(stations).write(to: Self.cacheURL)
             stationsFailed = false
             stationsOffline = false
         } catch {

@@ -119,10 +119,14 @@ struct RoundButton: View {
 }
 
 // 항상 보이는 나침반, 바늘이 지도 방향 따라 회전, 탭하면 북쪽 정렬
+// 지도 카메라를 담는 작은 상자. 이걸 읽는 뷰(나침반, 내 위치 점)만 매 프레임 다시 그려짐
+@Observable final class MapCam { var camera: MapCamera? }
+
 struct CompassButton: View {
     @Binding var position: MapCameraPosition
-    let camera: MapCamera?
+    let cam: MapCam
     var body: some View {
+        let camera = cam.camera
         Button {
             guard let c = camera else { return }
             withAnimation {
@@ -195,21 +199,31 @@ struct Toast: View {
     }
 }
 
-// 화면을 5x9 격자로 나눠 칸마다 자전거 가장 많은 대여소 1개만, 겹침 방지
+// 지도 좌표에 고정된 격자(줌 단계별)에서 칸마다 자전거 가장 많은 대여소 1개
+// 같은 배율이면 이동해도 칸이 안 바뀌어 마커가 그대로, 화면 밖 반 화면씩 미리 그림
 // ponytail: 격자 솎아내기, 숫자 묶음 클러스터가 필요해지면 교체
 func visibleStations(_ all: [Station], in r: MKCoordinateRegion?) -> [Station] {
     guard let r, r.span.latitudeDelta < 0.08 else { return [] }
-    let minLat = r.center.latitude - r.span.latitudeDelta / 2
-    let minLng = r.center.longitude - r.span.longitudeDelta / 2
-    let ch = r.span.latitudeDelta / 9, cw = r.span.longitudeDelta / 5
-    var best: [Int: Station] = [:]
+    let level = pow(2, log2(r.span.latitudeDelta).rounded(.up))
+    let ch = level / 9, cw = level / 9 * 1.05
+    let halfLat = r.span.latitudeDelta, halfLng = r.span.longitudeDelta // 화면의 2배 범위
+    struct Cell: Hashable { let x: Int; let y: Int }
+    var best: [Cell: Station] = [:]
     for s in all {
-        let y = (s.coordinate.latitude - minLat) / ch, x = (s.coordinate.longitude - minLng) / cw
-        guard (0..<9).contains(y), (0..<5).contains(x) else { continue }
-        let key = Int(x) * 100 + Int(y)
+        let lat = s.coordinate.latitude, lng = s.coordinate.longitude
+        guard abs(lat - r.center.latitude) < halfLat, abs(lng - r.center.longitude) < halfLng else { continue }
+        let key = Cell(x: Int((lng / cw).rounded(.down)), y: Int((lat / ch).rounded(.down)))
         if s.bikes > best[key]?.bikes ?? -1 { best[key] = s }
     }
     return Array(best.values)
+}
+
+// 지도 이동 중 마커 다시 고를 때: 중심이 1/4 화면 넘게 움직였거나 배율이 바뀌었을 때만
+func movedEnough(_ old: MKCoordinateRegion?, _ new: MKCoordinateRegion) -> Bool {
+    guard let old else { return true }
+    return abs(new.center.latitude - old.center.latitude) > old.span.latitudeDelta / 4
+        || abs(new.center.longitude - old.center.longitude) > old.span.longitudeDelta / 4
+        || abs(log2(new.span.latitudeDelta / old.span.latitudeDelta)) > 0.3
 }
 
 func zoomedOut(_ r: MKCoordinateRegion?) -> Bool { (r?.span.latitudeDelta ?? 0) >= 0.08 }
@@ -224,8 +238,11 @@ func agoText(_ d: Date?, now: Date) -> String {
 
 // iOS 기본 위치 표시는 정확도 낮을 때 큰 오차 원을 그려서 직접 그림. 초록 점 + 바라보는 방향
 struct MyLocationDot: View {
-    let heading: Double? // 지도 회전 보정한 기기 방향(도)
+    let location: LocationService
+    let cam: MapCam
     var body: some View {
+        // 지도 회전 보정한 기기 방향(도)
+        let heading = location.heading.map { $0 - (cam.camera?.heading ?? 0) }
         ZStack {
             if let heading {
                 Cone().fill(RadialGradient(colors: [Color.brand.opacity(0.35), Color.brand.opacity(0)],

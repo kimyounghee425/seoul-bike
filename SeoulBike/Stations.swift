@@ -18,15 +18,22 @@ enum StationAPI {
         let rentBikeStatus: Body?
     }
 
+    // 약 2,700개라 3페이지를 동시에, 더 있으면 이어서
     static func fetchAll() async throws -> [Station] {
-        var all: [Station] = []
-        var start = 1
-        while true {
+        var all = try await withThrowingTaskGroup(of: (Int, [Station]).self) { g in
+            for i in 0..<3 { g.addTask { (i, try await fetch(start: i * 1000 + 1, end: i * 1000 + 1000)) } }
+            var pages: [(Int, [Station])] = []
+            for try await p in g { pages.append(p) }
+            return pages.sorted { $0.0 < $1.0 }.flatMap(\.1)
+        }
+        var start = 3001
+        while all.count == start - 1 {
             let page = try await fetch(start: start, end: start + 999)
             all += page
-            if page.count < 1000 { return all }
+            if page.count < 1000 { break }
             start += 1000
         }
+        return all
     }
 
     private static func fetch(start: Int, end: Int) async throws -> [Station] {
@@ -48,5 +55,22 @@ enum StationAPI {
     static func displayName(_ raw: String) -> String {
         guard let dot = raw.firstIndex(of: "."), raw[..<dot].allSatisfy(\.isNumber) else { return raw }
         return raw[raw.index(after: dot)...].trimmingCharacters(in: .whitespaces)
+    }
+}
+
+// 폰 저장용
+extension Station: Codable {
+    private enum K: String, CodingKey { case id, name, lat, lng, bikes }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        self.init(id: try c.decode(String.self, forKey: .id), name: try c.decode(String.self, forKey: .name),
+                  coordinate: .init(latitude: try c.decode(Double.self, forKey: .lat), longitude: try c.decode(Double.self, forKey: .lng)),
+                  bikes: try c.decode(Int.self, forKey: .bikes))
+    }
+    func encode(to e: Encoder) throws {
+        var c = e.container(keyedBy: K.self)
+        try c.encode(id, forKey: .id); try c.encode(name, forKey: .name)
+        try c.encode(coordinate.latitude, forKey: .lat); try c.encode(coordinate.longitude, forKey: .lng)
+        try c.encode(bikes, forKey: .bikes)
     }
 }

@@ -5,7 +5,7 @@ struct MapPickView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let field: Field
-    @State private var camera: MapCamera?
+    @State private var cam = MapCam()
     @State private var position: MapCameraPosition = .userLocation(fallback: .region(.seoulCityHall))
     @State private var region: MKCoordinateRegion?
     @State private var place: Place?
@@ -17,7 +17,7 @@ struct MapPickView: View {
         Map(position: $position) {
             if let c = model.location.coordinate {
                 Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                    MyLocationDot(location: model.location, cam: cam)
                 }
                 .annotationTitles(.hidden)
             }
@@ -27,7 +27,7 @@ struct MapPickView: View {
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
         .mapControls {}
-        .onMapCameraChange(frequency: .continuous) { camera = $0.camera }
+        .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
         .onMapCameraChange(frequency: .onEnd) { ctx in
             if region != nil { moved = true }
             region = ctx.region
@@ -35,7 +35,7 @@ struct MapPickView: View {
         .overlay { CenterPin(label: isOrigin ? "출발" : "도착", dark: !isOrigin) }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 12) {
-                HStack(spacing: 8) { BackPill(); Pill(text: isOrigin ? "출발지 선택" : "도착지 선택"); Spacer(); CompassButton(position: $position, camera: camera) }
+                HStack(spacing: 8) { BackPill(); Pill(text: isOrigin ? "출발지 선택" : "도착지 선택"); Spacer(); CompassButton(position: $position, cam: cam) }
                 if !moved { Toast(text: "지도를 움직여 위치를 맞춰주세요") }
             }
             .padding(.horizontal, 16)

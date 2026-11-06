@@ -52,7 +52,7 @@ struct HomeView: View {
     @State private var region: MKCoordinateRegion?
     @State private var selected: Station?
     @State private var centered = false
-    @State private var camera: MapCamera?
+    @State private var cam = MapCam()
     @State private var pressed: CLLocationCoordinate2D?
     @State private var pressedPlace: Place?
     @State private var touch: CGPoint?
@@ -62,7 +62,7 @@ struct HomeView: View {
         Map(position: $position) {
             if let c = model.location.coordinate {
                 Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                    MyLocationDot(location: model.location, cam: cam)
                 }
                 .annotationTitles(.hidden)
             }
@@ -92,7 +92,10 @@ struct HomeView: View {
             }
         )
         }
-        .onMapCameraChange(frequency: .continuous) { camera = $0.camera }
+        .onMapCameraChange(frequency: .continuous) { ctx in
+            cam.camera = ctx.camera
+            if movedEnough(region, ctx.region) { region = ctx.region } // 움직이는 중에도 미리 갱신
+        }
         .onMapCameraChange(frequency: .onEnd) { region = $0.region; model.homeRegion = $0.region }
         // 위치가 지도보다 늦게 잡히면 기본 위치(시청)에 머무르는 문제, 첫 위치 수신 시 한 번 이동
         .onChange(of: model.location.coordinate == nil, initial: true) { _, missing in
@@ -111,7 +114,7 @@ struct HomeView: View {
                 }
                 ZStack(alignment: .top) {
                     if zoomedOut(region) { Toast(text: "확대하면 대여소가 보여요").padding(.top, 8) }
-                    HStack { Spacer(); CompassButton(position: $position, camera: camera) }
+                    HStack { Spacer(); CompassButton(position: $position, cam: cam) }
                 }
             }
             .padding(.horizontal, 16)

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ResultView: View {
     @Environment(AppModel.self) private var model
-    @State private var camera: MapCamera?
+    @State private var cam = MapCam()
     @State private var position: MapCameraPosition = .automatic
     @State private var trip: Trip?
     @State private var error: Trip.PlanError?
@@ -15,7 +15,7 @@ struct ResultView: View {
         Map(position: $position) {
             if let c = model.location.coordinate {
                 Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(heading: model.location.heading.map { $0 - (camera?.heading ?? 0) })
+                    MyLocationDot(location: model.location, cam: cam)
                 }
                 .annotationTitles(.hidden)
             }
@@ -33,13 +33,13 @@ struct ResultView: View {
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
         .mapControls {}
-        .onMapCameraChange(frequency: .continuous) { camera = $0.camera }
+        .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
                 BackPill()
                 Pill(text: "\(model.originPlace?.name ?? "내 위치") → \(model.destination?.name ?? "")")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                CompassButton(position: $position, camera: camera)
+                CompassButton(position: $position, cam: cam)
             }
             .padding(.horizontal, 16)
         }
