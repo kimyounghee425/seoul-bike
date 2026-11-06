@@ -20,13 +20,16 @@ struct RootView: View {
                 }
                 .toolbar(.hidden, for: .navigationBar)
         }
-        .task { await model.loadStations() }
+        .task {
+            await model.loadStations()
+            #if DEBUG
+            try? await Task.sleep(for: .seconds(1)) // 대여소 다 받고 내비 스택 준비 후
+            demo()
+            #endif
+        }
         .onChange(of: phase) { _, p in if p == .active { Task { await model.refreshIfStale() } } }
         .onAppear {
             model.location.request()
-            #if DEBUG
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { demo() } // 내비 스택 준비 후
-            #endif
         }
     }
 
