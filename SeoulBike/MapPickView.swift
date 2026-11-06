@@ -5,8 +5,7 @@ struct MapPickView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let field: Field
-    @State private var cam = MapCam()
-    @State private var position: MapCameraPosition = .userLocation(fallback: .region(.seoulCityHall))
+    @State private var map = MapHandle()
     @State private var region: MKCoordinateRegion?
     @State private var place: Place?
     @State private var moved = false
@@ -14,59 +13,56 @@ struct MapPickView: View {
     private var isOrigin: Bool { field == .origin }
 
     var body: some View {
-        Map(position: $position) {
-            if let c = model.location.coordinate {
-                Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(location: model.location, cam: cam)
-                }
-                .annotationTitles(.hidden)
+        KakaoMapView(handle: map)
+        .ignoresSafeArea()
+        .onAppear {
+            map.onCamera = { r, final in
+                guard final else { return }
+                if region != nil { moved = true }
+                region = r
             }
-            ForEach(stationClusters(model.stations, in: region)) { g in
-                Annotation("", coordinate: g.coordinate, anchor: .center) {
-                    ClusterBubble(count: g.count).onTapGesture { withAnimation { position = zoomIn(to: g.coordinate) } }
-                }
-                .annotationTitles(.hidden)
-            }
-            ForEach(visibleStations(model.stations, in: region)) { s in
-                Annotation("", coordinate: s.coordinate) { StationMarker(bikes: s.bikes) }.annotationTitles(.hidden)
+            map.onClusterTap = { c in map.move(to: c, zoom: 14) }
+            // 이미 고른 장소가 있으면 그곳, 아니면 홈에서 보던 지도 그대로 (네이버 지도 방식)
+            let current = isOrigin ? model.origin : model.destination
+            if let c = current?.coordinate {
+                map.move(to: c, zoom: 16, animated: false)
+            } else if let r = model.homeRegion {
+                map.show(r)
+            } else if let c = model.location.coordinate {
+                map.move(to: c, zoom: 15, animated: false)
             }
         }
-        .mapStyle(.standard(pointsOfInterest: .all))
-        .mapControls {}
-        .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
-        .onMapCameraChange(frequency: .onEnd) { ctx in
-            if region != nil { moved = true }
-            region = ctx.region
+        .onChange(of: markerKey, initial: true) { _, _ in
+            map.setClusters(stationClusters(model.stations, in: region))
+            map.setStations(visibleStations(model.stations, in: region), selected: nil, dimmed: model.stationsOffline)
         }
+        .onChange(of: locationKey, initial: true) { _, _ in map.setMyLocation(model.location.coordinate, heading: model.location.heading) }
         .overlay { CenterPin(label: isOrigin ? "출발" : "도착") }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 12) {
-                HStack(spacing: 8) { BackPill(); Pill(text: isOrigin ? "출발지 선택" : "도착지 선택"); Spacer(); CompassButton(position: $position, cam: cam) }
+                HStack(spacing: 8) { BackPill(); Pill(text: isOrigin ? "출발지 선택" : "도착지 선택"); Spacer(); CompassButton(map: map) }
                 if !moved { Toast(text: "지도를 움직여 위치를 맞춰주세요") }
             }
             .padding(.horizontal, 16)
         }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .trailing, spacing: 16) {
-                LocateButton(position: $position, location: model.location, cam: cam).padding(.trailing, 16)
+                LocateButton(map: map, location: model.location).padding(.trailing, 16)
                 panel
-            }
-        }
-        .onAppear {
-            // 이미 고른 장소가 있으면 그곳, 아니면 홈에서 보던 지도 그대로 (네이버 지도 방식)
-            let current = isOrigin ? model.origin : model.destination
-            if let c = current?.coordinate {
-                position = .region(.init(center: c, span: .init(latitudeDelta: 0.008, longitudeDelta: 0.008)))
-            } else if let r = model.homeRegion {
-                position = .region(r)
-            } else if let c = model.location.coordinate {
-                position = .region(.init(center: c, span: .init(latitudeDelta: 0.015, longitudeDelta: 0.015)))
             }
         }
         .task(id: region.map { "\($0.center.latitude),\($0.center.longitude)" }) {
             guard let c = region?.center else { return }
             place = try? await Kakao.address(at: c)
         }
+    }
+
+    private var markerKey: String {
+        "\(region.map { "\($0.center.latitude),\($0.center.longitude),\($0.span.latitudeDelta)" } ?? "")|\(model.stationsUpdatedAt?.timeIntervalSince1970 ?? 0)|\(model.stationsOffline)"
+    }
+
+    private var locationKey: String {
+        "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
     }
 
     private var panel: some View {

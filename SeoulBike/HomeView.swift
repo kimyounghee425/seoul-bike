@@ -51,73 +51,50 @@ struct RootView: View {
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
-    @State private var position: MapCameraPosition = .userLocation(fallback: .region(.seoulCityHall))
+    @State private var map = MapHandle()
     @State private var region: MKCoordinateRegion?
     @State private var selected: Station?
     @State private var centered = false
-    @State private var cam = MapCam()
     @State private var pressed: CLLocationCoordinate2D?
     @State private var pressedPlace: Place?
-    @State private var touch: CGPoint?
 
     var body: some View {
-        MapReader { proxy in
-        Map(position: $position) {
-            if let c = model.location.coordinate {
-                Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(location: model.location, cam: cam)
-                }
-                .annotationTitles(.hidden)
+        KakaoMapView(handle: map)
+        .ignoresSafeArea()
+        .onAppear {
+            map.onCamera = { r, final in
+                if final { region = r; model.homeRegion = r } else if movedEnough(region, r) { region = r } // 움직이는 중에도 미리 갱신
             }
-            if let p = pressed {
-                Annotation("", coordinate: p, anchor: .bottom) { DropPin() }.annotationTitles(.hidden)
-            }
-            ForEach(stationClusters(model.stations, in: region)) { g in
-                Annotation("", coordinate: g.coordinate, anchor: .center) {
-                    ClusterBubble(count: g.count).onTapGesture { withAnimation { position = zoomIn(to: g.coordinate) } }
-                }
-                .annotationTitles(.hidden)
-            }
-            ForEach(visibleStations(model.stations, in: region)) { s in
-                Annotation("", coordinate: s.coordinate) {
-                    StationMarker(bikes: s.bikes, selected: s.id == selected?.id)
-                        .opacity(model.stationsOffline ? 0.4 : 1) // 끊긴 동안은 옛 숫자라 흐리게
-                        .onTapGesture { withAnimation(.snappy) { pressed = nil; selected = s } }
-                }
-                .annotationTitles(.hidden)
-            }
-        }
-        .mapStyle(.standard(pointsOfInterest: .all))
-        .mapControls {}
-        // 지도 꾹 누르기 → 그 위치를 출발·도착으로
-        // 누르는 위치 추적 + 0.5초 지나면 손 떼기 전에 바로 핀
-        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { touch = $0.startLocation })
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5, maximumDistance: 10).onEnded { _ in
-                guard let t = touch, let c = proxy.convert(t, from: .local) else { return }
+            // 지도 꾹 누르기 → 그 위치를 출발·도착으로 (손 떼기 전에 바로)
+            map.onLongPress = { c in
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.snappy) { selected = nil; pressed = c; pressedPlace = nil }
                 Task { pressedPlace = try? await Kakao.address(at: c) }
             }
-        )
+            map.onStationTap = { id in
+                guard let s = model.stations.first(where: { $0.id == id }) else { return }
+                withAnimation(.snappy) { pressed = nil; selected = s }
+            }
+            map.onClusterTap = { c in map.move(to: c, zoom: 14) }
         }
-        .onMapCameraChange(frequency: .continuous) { ctx in
-            cam.camera = ctx.camera
-            if movedEnough(region, ctx.region) { region = ctx.region } // 움직이는 중에도 미리 갱신
+        .onChange(of: markerKey, initial: true) { _, _ in
+            map.setClusters(stationClusters(model.stations, in: region))
+            map.setStations(visibleStations(model.stations, in: region), selected: selected?.id, dimmed: model.stationsOffline)
         }
-        .onMapCameraChange(frequency: .onEnd) { region = $0.region; model.homeRegion = $0.region }
+        .onChange(of: pressed.map { "\($0.latitude),\($0.longitude)" }, initial: true) { _, _ in map.setDroppedPin(pressed) }
+        .onChange(of: locationKey, initial: true) { _, _ in map.setMyLocation(model.location.coordinate, heading: model.location.heading) }
         #if DEBUG
         .task { // 스크린샷 확인용: -demo zoom → 축소 묶음 화면
             guard UserDefaults.standard.string(forKey: "demo") == "zoom" else { return }
             try? await Task.sleep(for: .seconds(2))
-            position = .region(.init(center: .init(latitude: 37.55, longitude: 127.0), span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2)))
+            map.move(to: .init(latitude: 37.55, longitude: 127.0), zoom: 12)
         }
         #endif
         // 위치가 지도보다 늦게 잡히면 기본 위치(시청)에 머무르는 문제, 첫 위치 수신 시 한 번 이동
         .onChange(of: model.location.coordinate == nil, initial: true) { _, missing in
             guard !missing, !centered, let c = model.location.coordinate else { return }
             centered = true
-            position = .region(.init(center: c, span: .init(latitudeDelta: 0.015, longitudeDelta: 0.015)))
+            map.move(to: c, zoom: 15, animated: false)
         }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 8) {
@@ -128,9 +105,7 @@ struct HomeView: View {
                         Task { await model.loadStations() }
                     }
                 }
-                ZStack(alignment: .top) {
-                    HStack { Spacer(); CompassButton(position: $position, cam: cam) }
-                }
+                HStack { Spacer(); CompassButton(map: map) }
             }
             .padding(.horizontal, 16)
         }
@@ -139,12 +114,21 @@ struct HomeView: View {
                 HStack(alignment: .bottom) {
                     RefreshChip()
                     Spacer()
-                    LocateButton(position: $position, location: model.location, cam: cam)
+                    LocateButton(map: map, location: model.location)
                 }
                 .padding(.horizontal, 16).padding(.bottom, selected == nil && pressed == nil ? 8 : 0)
                 bottomPanel
             }
         }
+    }
+
+    // 마커를 다시 고를 조건: 지도 영역, 대여소 갱신, 선택, 오프라인
+    private var markerKey: String {
+        "\(region.map { "\($0.center.latitude),\($0.center.longitude),\($0.span.latitudeDelta)" } ?? "")|\(model.stationsUpdatedAt?.timeIntervalSince1970 ?? 0)|\(selected?.id ?? "")|\(model.stationsOffline)"
+    }
+
+    private var locationKey: String {
+        "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
     }
 
     // 대여소 탭, 꾹 누르기 시트. 칩과 현위치 버튼은 그 위에 붙어서 같이 올라감
@@ -206,22 +190,16 @@ private struct RefreshChip: View {
 }
 
 // 지금 배율과 방향 그대로 내 위치로 이동. 북쪽 정렬은 나침반 버튼 담당
-// iOS 기본 위치 추적(.userLocation)은 기본 위치 표시를 빼서 동작 안 해 내 좌표로 직접 이동
 struct LocateButton: View {
-    @Binding var position: MapCameraPosition
+    let map: MapHandle
     let location: LocationService
-    let cam: MapCam
 
     var body: some View {
         let c = location.coordinate
-        let centered = c != nil && cam.camera.map { $0.centerCoordinate.distance(to: c!) < 30 } == true
+        let centered = c != nil && map.center.map { $0.distance(to: c!) < 30 } == true
         RoundButton(systemName: centered ? "location.fill" : "location") {
             guard let c else { location.request(); return }
-            let now = cam.camera
-            withAnimation(.easeInOut(duration: 0.4)) {
-                position = .camera(MapCamera(centerCoordinate: c, distance: now?.distance ?? 2000,
-                                             heading: now?.heading ?? 0, pitch: now?.pitch ?? 0))
-            }
+            map.move(to: c)
         }
     }
 }
@@ -260,15 +238,5 @@ private struct PlacePanel: View {
         model.set(f, place)
         close()
         model.proceed()
-    }
-}
-
-// 피그마 "핀 UI 시안" B안, 그림자 포함 SVG라 바닥(anchor .bottom)이 좌표
-private struct DropPin: View {
-    @State private var dropped = false
-    var body: some View {
-        DropPinShape(color: .pinOrange)
-            .offset(y: dropped ? 0 : -16).opacity(dropped ? 1 : 0)
-            .onAppear { withAnimation(.spring(duration: 0.35, bounce: 0.4)) { dropped = true } }
     }
 }

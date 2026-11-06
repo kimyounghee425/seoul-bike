@@ -120,29 +120,20 @@ struct RoundButton: View {
 }
 
 // 항상 보이는 나침반, 바늘이 지도 방향 따라 회전, 탭하면 북쪽 정렬
-// 지도 카메라를 담는 작은 상자. 이걸 읽는 뷰(나침반, 내 위치 점)만 매 프레임 다시 그려짐
-@Observable final class MapCam { var camera: MapCamera? }
-
 struct CompassButton: View {
-    @Binding var position: MapCameraPosition
-    let cam: MapCam
+    let map: MapHandle
     var body: some View {
-        let camera = cam.camera
-        Button {
-            guard let c = camera else { return }
-            withAnimation {
-                position = .camera(MapCamera(centerCoordinate: c.centerCoordinate, distance: c.distance, heading: 0, pitch: 0))
-            }
-        } label: {
+        let deg = -map.rotation * 180 / .pi
+        Button { map.resetNorth() } label: {
             ZStack {
                 Circle().fill(.white).shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                 VStack(spacing: 0) {
                     Triangle().fill(Color(hex: 0xF04452)).frame(width: 9, height: 12)
                     Triangle().fill(Color.grey400).frame(width: 9, height: 12).rotationEffect(.degrees(180))
                 }
-                .rotationEffect(.degrees(-(camera?.heading ?? 0)))
+                .rotationEffect(.degrees(deg))
                 Text("N").font(.system(size: 8, weight: .heavy)).foregroundStyle(Color(hex: 0xF04452))
-                    .offset(y: -17).rotationEffect(.degrees(-(camera?.heading ?? 0)))
+                    .offset(y: -17).rotationEffect(.degrees(deg))
             }
             .frame(width: 48, height: 48)
         }
@@ -206,7 +197,7 @@ struct Toast: View {
 func visibleStations(_ all: [Station], in r: MKCoordinateRegion?) -> [Station] {
     guard let r, r.span.latitudeDelta < 0.08 else { return [] }
     let level = pow(2, log2(r.span.latitudeDelta).rounded(.up))
-    let ch = level / 9, cw = level / 9 * 1.05
+    let ch = level / 12, cw = level / 12 * 1.05 // 카카오 줌 단계 기준 화면당 8~9줄
     let halfLat = r.span.latitudeDelta, halfLng = r.span.longitudeDelta // 화면의 2배 범위
     struct Cell: Hashable { let x: Int; let y: Int }
     var best: [Cell: Station] = [:]
@@ -237,7 +228,7 @@ struct StationCluster: Identifiable {
 func stationClusters(_ all: [Station], in r: MKCoordinateRegion?) -> [StationCluster] {
     guard let r, r.span.latitudeDelta >= 0.08 else { return [] }
     let level = pow(2, log2(r.span.latitudeDelta).rounded(.up))
-    let cell = level / 5 // 화면에 10~15개 정도
+    let cell = level / 7 // 화면에 10~15개 정도 (카카오 줌 기준)
     let cellLng = cell / 0.8 // 서울 위도에서 경도 1도가 위도 1도보다 짧아 보정
     struct Cell: Hashable { let x: Int; let y: Int }
     var sum: [Cell: (lat: Double, lng: Double, n: Int)] = [:]
@@ -268,49 +259,12 @@ struct ClusterBubble: View {
     }
 }
 
-// 묶음 탭 → 개별 대여소가 보이는 배율로 확대
-func zoomIn(to c: CLLocationCoordinate2D) -> MapCameraPosition {
-    .region(.init(center: c, span: .init(latitudeDelta: 0.03, longitudeDelta: 0.03)))
-}
-
 func distanceText(_ m: Double) -> String { m < 1000 ? "\(Int(m))m" : String(format: "%.1fkm", m / 1000) }
 
 func agoText(_ d: Date?, now: Date) -> String {
     guard let d else { return "불러오는 중" }
     let m = Int(now.timeIntervalSince(d) / 60)
     return m < 1 ? "방금" : "\(m)분 전"
-}
-
-// iOS 기본 위치 표시는 정확도 낮을 때 큰 오차 원을 그려서 직접 그림. 초록 점 + 바라보는 방향
-struct MyLocationDot: View {
-    let location: LocationService
-    let cam: MapCam
-    var body: some View {
-        // 지도 회전 보정한 기기 방향(도)
-        let heading = location.heading.map { $0 - (cam.camera?.heading ?? 0) }
-        ZStack {
-            if let heading {
-                Cone().fill(RadialGradient(colors: [Color.brand.opacity(0.35), Color.brand.opacity(0)],
-                                           center: .center, startRadius: 6, endRadius: 40))
-                    .rotationEffect(.degrees(heading))
-            }
-            Circle().fill(.white).frame(width: 22, height: 22).shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-            Circle().fill(Color.brand).frame(width: 14, height: 14)
-        }
-        .frame(width: 80, height: 80)
-        .allowsHitTesting(false)
-    }
-
-    private struct Cone: Shape {
-        func path(in r: CGRect) -> Path {
-            Path { p in
-                let c = CGPoint(x: r.midX, y: r.midY)
-                p.move(to: c)
-                p.addArc(center: c, radius: r.width / 2, startAngle: .degrees(-90 - 30), endAngle: .degrees(-90 + 30), clockwise: false)
-                p.closeSubpath()
-            }
-        }
-    }
 }
 
 // 피그마 "핀 UI 시안" B안. SVG 에셋은 iOS가 흰 테두리를 어긋나게 그려서 코드로 그림 (40x56, 끝이 y 50)

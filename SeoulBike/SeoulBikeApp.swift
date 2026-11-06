@@ -1,3 +1,4 @@
+import KakaoMapsSDK
 import SwiftUI
 
 @main
@@ -6,6 +7,7 @@ struct SeoulBikeApp: App {
     @State private var model = AppModel()
 
     init() {
+        SDKInitializer.InitSDK(appKey: Secrets.kakaoNative)
         #if DEBUG
         Trip.selfCheck()
         #endif
@@ -26,4 +28,5 @@ struct SeoulBikeApp: App {
 enum Secrets {
     static let seoul = Bundle.main.object(forInfoDictionaryKey: "SeoulOpenAPIKey") as? String ?? ""
     static let kakao = Bundle.main.object(forInfoDictionaryKey: "KakaoRestAPIKey") as? String ?? ""
+    static let kakaoNative = Bundle.main.object(forInfoDictionaryKey: "KakaoNativeAppKey") as? String ?? ""
 }

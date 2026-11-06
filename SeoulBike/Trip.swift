@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 struct Trip {
@@ -9,6 +10,7 @@ struct Trip {
     let bike: Leg
     let walkFrom: Leg
 
+    var allPoints: [CLLocationCoordinate2D] { walkTo.path + bike.path + walkFrom.path }
     var totalMinutes: Int { walkTo.minutes + bike.minutes + walkFrom.minutes }
     var totalKm: String { String(format: "%.1fkm", Double(walkTo.meters + bike.meters + walkFrom.meters) / 1000) }
 

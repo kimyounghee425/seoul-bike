@@ -3,53 +3,41 @@ import SwiftUI
 
 struct ResultView: View {
     @Environment(AppModel.self) private var model
-    @State private var cam = MapCam()
-    @State private var position: MapCameraPosition = .automatic
+    @State private var map = MapHandle()
     @State private var trip: Trip?
     @State private var error: Trip.PlanError?
     @State private var expanded = true
 
-    private let dash = StrokeStyle(lineWidth: 4, lineCap: .round, dash: [1, 8])
-
     var body: some View {
-        Map(position: $position) {
-            if let c = model.location.coordinate {
-                Annotation("", coordinate: c, anchor: .center) {
-                    MyLocationDot(location: model.location, cam: cam)
-                }
-                .annotationTitles(.hidden)
-            }
-            if let t = trip {
-                MapPolyline(coordinates: t.walkTo.path).stroke(Color.grey600, style: dash)
-                MapPolyline(coordinates: t.bike.path).stroke(Color.brand, style: .init(lineWidth: 6, lineCap: .round, lineJoin: .round))
-                MapPolyline(coordinates: t.walkFrom.path).stroke(Color.grey600, style: dash)
-                Annotation("", coordinate: t.start.coordinate) { MapTag(text: "대여") }.annotationTitles(.hidden)
-                Annotation("", coordinate: t.end.coordinate) { MapTag(text: "반납") }.annotationTitles(.hidden)
-                Annotation("", coordinate: t.destination.coordinate) {
-                    Circle().fill(Color.pinOrange).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
-                }
-                .annotationTitles(.hidden)
-            }
+        KakaoMapView(handle: map)
+        .ignoresSafeArea()
+        .onAppear {
+            // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백
+            map.setMargins(UIEdgeInsets(top: 130, left: 40, bottom: 440, right: 40))
+            if let c = model.originPlace?.coordinate ?? model.location.coordinate { map.move(to: c, zoom: 15, animated: false) }
         }
-        .mapStyle(.standard(pointsOfInterest: .all))
-        .mapControls {}
-        .onMapCameraChange(frequency: .continuous) { cam.camera = $0.camera }
+        .onChange(of: locationKey, initial: true) { _, _ in map.setMyLocation(model.location.coordinate, heading: model.location.heading) }
+        .onChange(of: map.ready) { _, ready in if ready, let t = trip { map.setTrip(t); map.fit(t.allPoints) } }
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
                 BackPill()
                 Pill(text: "\(model.originPlace?.name ?? "내 위치") → \(model.destination?.name ?? "")")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                CompassButton(position: $position, cam: cam)
+                CompassButton(map: map)
             }
             .padding(.horizontal, 16)
         }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .trailing, spacing: 16) {
-                LocateButton(position: $position, location: model.location, cam: cam).padding(.trailing, 16)
+                LocateButton(map: map, location: model.location).padding(.trailing, 16)
                 panel
             }
         }
         .task { await plan() }
+    }
+
+    private var locationKey: String {
+        "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
     }
 
     @ViewBuilder private var panel: some View {
@@ -104,16 +92,6 @@ struct ResultView: View {
         }
     }
 
-    // 경로 전체가 보이게 한 번만 맞춤. .automatic 은 다시 그릴 때마다 재맞춤돼서 확대가 막힘
-    private func fit(_ t: Trip) -> MapCameraPosition {
-        let pts = (t.walkTo.path + t.bike.path + t.walkFrom.path).map(MKMapPoint.init)
-        var r = pts.reduce(MKMapRect.null) { $0.union(MKMapRect(origin: $1, size: .init(width: 1, height: 1))) }
-        // 위 헤더, 아래 시트에 가리지 않게 여백 (시트가 아래쪽 절반 차지)
-        r = MKMapRect(x: r.minX - r.width * 0.25, y: r.minY - r.height * 0.4,
-                      width: r.width * 1.5, height: r.height * 2.4)
-        return .rect(r)
-    }
-
     private func plan() async {
         error = nil
         trip = nil
@@ -124,12 +102,11 @@ struct ResultView: View {
         }
         do {
             trip = try await Trip.plan(model)
-            if let t = trip { withAnimation { position = fit(t) } }
+            if let t = trip { map.setTrip(t); map.fit(t.allPoints) }
         } catch {
             self.error = Trip.PlanError.from(error)
-            // 경로 없으면 전국 지도로 축소되는 문제, 내 위치로
-            position = .region(.init(center: model.location.coordinate ?? MKCoordinateRegion.seoulCityHall.center,
-                                     span: .init(latitudeDelta: 0.015, longitudeDelta: 0.015)))
+            map.setTrip(nil)
+            if let c = model.location.coordinate { map.move(to: c, zoom: 15) }
         }
     }
 }
