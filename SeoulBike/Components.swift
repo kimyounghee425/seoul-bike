@@ -226,7 +226,51 @@ func movedEnough(_ old: MKCoordinateRegion?, _ new: MKCoordinateRegion) -> Bool 
         || abs(log2(new.span.latitudeDelta / old.span.latitudeDelta)) > 0.3
 }
 
-func zoomedOut(_ r: MKCoordinateRegion?) -> Bool { (r?.span.latitudeDelta ?? 0) >= 0.08 }
+// 많이 축소하면 대여소 대신 지역 묶음(피그마 C1, 숫자 = 대여소 수)
+struct StationCluster: Identifiable {
+    let id: String
+    let coordinate: CLLocationCoordinate2D
+    let count: Int
+}
+
+func stationClusters(_ all: [Station], in r: MKCoordinateRegion?) -> [StationCluster] {
+    guard let r, r.span.latitudeDelta >= 0.08 else { return [] }
+    let level = pow(2, log2(r.span.latitudeDelta).rounded(.up))
+    let cell = level / 5 // 화면에 10~15개 정도
+    let cellLng = cell / 0.8 // 서울 위도에서 경도 1도가 위도 1도보다 짧아 보정
+    struct Cell: Hashable { let x: Int; let y: Int }
+    var sum: [Cell: (lat: Double, lng: Double, n: Int)] = [:]
+    for s in all {
+        let lat = s.coordinate.latitude, lng = s.coordinate.longitude
+        guard abs(lat - r.center.latitude) < r.span.latitudeDelta, abs(lng - r.center.longitude) < r.span.longitudeDelta else { continue }
+        let k = Cell(x: Int((lng / cellLng).rounded(.down)), y: Int((lat / cell).rounded(.down)))
+        let v = sum[k] ?? (0, 0, 0)
+        sum[k] = (v.lat + lat, v.lng + lng, v.n + 1)
+    }
+    return sum.map { k, v in
+        StationCluster(id: "\(level)-\(k.x)-\(k.y)",
+                       coordinate: .init(latitude: v.lat / Double(v.n), longitude: v.lng / Double(v.n)), count: v.n)
+    }
+}
+
+// 피그마 C3 묶음 원: 36/46/58 세 크기
+struct ClusterBubble: View {
+    let count: Int
+    var body: some View {
+        let d: CGFloat = count < 50 ? 36 : count < 120 ? 46 : 58
+        Text("\(count)")
+            .font(.system(size: d < 40 ? 13 : d < 50 ? 15 : 17, weight: .bold)).foregroundStyle(.white)
+            .frame(width: d, height: d)
+            .background(Circle().fill(Color.brand))
+            .overlay(Circle().stroke(.white, lineWidth: 2.5))
+            .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+    }
+}
+
+// 묶음 탭 → 개별 대여소가 보이는 배율로 확대
+func zoomIn(to c: CLLocationCoordinate2D) -> MapCameraPosition {
+    .region(.init(center: c, span: .init(latitudeDelta: 0.03, longitudeDelta: 0.03)))
+}
 
 func distanceText(_ m: Double) -> String { m < 1000 ? "\(Int(m))m" : String(format: "%.1fkm", m / 1000) }
 

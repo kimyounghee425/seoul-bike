@@ -21,6 +21,12 @@ struct MapPickView: View {
                 }
                 .annotationTitles(.hidden)
             }
+            ForEach(stationClusters(model.stations, in: region)) { g in
+                Annotation("", coordinate: g.coordinate, anchor: .center) {
+                    ClusterBubble(count: g.count).onTapGesture { withAnimation { position = zoomIn(to: g.coordinate) } }
+                }
+                .annotationTitles(.hidden)
+            }
             ForEach(visibleStations(model.stations, in: region)) { s in
                 Annotation("", coordinate: s.coordinate) { StationMarker(bikes: s.bikes) }.annotationTitles(.hidden)
             }

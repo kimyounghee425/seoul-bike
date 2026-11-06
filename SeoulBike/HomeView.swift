@@ -69,6 +69,12 @@ struct HomeView: View {
             if let p = pressed {
                 Annotation("", coordinate: p, anchor: .bottom) { DropPin() }.annotationTitles(.hidden)
             }
+            ForEach(stationClusters(model.stations, in: region)) { g in
+                Annotation("", coordinate: g.coordinate, anchor: .center) {
+                    ClusterBubble(count: g.count).onTapGesture { withAnimation { position = zoomIn(to: g.coordinate) } }
+                }
+                .annotationTitles(.hidden)
+            }
             ForEach(visibleStations(model.stations, in: region)) { s in
                 Annotation("", coordinate: s.coordinate) {
                     StationMarker(bikes: s.bikes, selected: s.id == selected?.id)
@@ -97,6 +103,13 @@ struct HomeView: View {
             if movedEnough(region, ctx.region) { region = ctx.region } // 움직이는 중에도 미리 갱신
         }
         .onMapCameraChange(frequency: .onEnd) { region = $0.region; model.homeRegion = $0.region }
+        #if DEBUG
+        .task { // 스크린샷 확인용: -demo zoom → 축소 묶음 화면
+            guard UserDefaults.standard.string(forKey: "demo") == "zoom" else { return }
+            try? await Task.sleep(for: .seconds(2))
+            position = .region(.init(center: .init(latitude: 37.55, longitude: 127.0), span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2)))
+        }
+        #endif
         // 위치가 지도보다 늦게 잡히면 기본 위치(시청)에 머무르는 문제, 첫 위치 수신 시 한 번 이동
         .onChange(of: model.location.coordinate == nil, initial: true) { _, missing in
             guard !missing, !centered, let c = model.location.coordinate else { return }
@@ -113,7 +126,6 @@ struct HomeView: View {
                     }
                 }
                 ZStack(alignment: .top) {
-                    if zoomedOut(region) { Toast(text: "확대하면 대여소가 보여요").padding(.top, 8) }
                     HStack { Spacer(); CompassButton(position: $position, cam: cam) }
                 }
             }
