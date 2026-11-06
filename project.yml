@@ -14,6 +14,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kimyonghee.seoulbike
+        DEVELOPMENT_TEAM: RYT9AL5P9S
+        CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SWIFT_VERSION: "5.0"
@@ -22,7 +24,7 @@ targets:
     info:
       path: SeoulBike/Info.plist
       properties:
-        CFBundleDisplayName: 따릉길
+        CFBundleDisplayName: 따비
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSLocationWhenInUseUsageDescription: 내 주변 따릉이 대여소를 찾고 경로를 안내하는 데 사용해요.
