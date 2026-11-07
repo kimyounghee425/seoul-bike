@@ -138,13 +138,15 @@ final class MapHandle {
     @ObservationIgnored private var shownClusters: [String: String] = [:]
     @ObservationIgnored private var me: (coord: CLLocationCoordinate2D?, heading: Double?) = (nil, nil)
     @ObservationIgnored private var mePois: (dot: Poi?, cone: Poi?) = (nil, nil)
+    @ObservationIgnored private var meApplied: (coord: CLLocationCoordinate2D?, orient: Double?, coneShown: Bool) = (nil, nil, false)
     @ObservationIgnored private var pendingTrip: Trip??
     @ObservationIgnored private var pendingPin: CLLocationCoordinate2D??
 
     func attach(_ map: KakaoMap) {
         self.map = map
         let lm = map.getLabelManager()
-        for (id, z) in [("clusters", 1), ("stations", 2), ("tags", 3), ("pins", 4), ("me", 5)] {
+        // 내 위치가 대여소 마커에 가려지지 않게 zOrder 크게 벌림
+        for (id, z) in [("clusters", 10), ("stations", 20), ("tags", 30), ("pins", 40), ("me", 100)] {
             _ = lm.addLabelLayer(option: LabelLayerOptions(layerID: id, competitionType: .none, competitionUnit: .symbolFirst, orderType: .rank, zOrder: z))
         }
         let rm = map.getRouteManager()
@@ -264,10 +266,11 @@ final class MapHandle {
         applyMe()
     }
 
+    // 좌표·방향이 실제로 바뀐 경우에만 갱신. 카메라 틱(50ms)마다 position을 다시 쓰면 SDK가 지웠다 그려서 깜빡임
     private func applyMe() {
         guard let layer = layer("me") else { return }
         guard let c = me.coord else {
-            if mePois.dot != nil { layer.clearAllItems(); mePois = (nil, nil) }
+            if mePois.dot != nil { layer.clearAllItems(); mePois = (nil, nil); meApplied = (nil, nil, false) }
             return
         }
         let p = MapPoint(longitude: c.longitude, latitude: c.latitude)
@@ -279,15 +282,23 @@ final class MapHandle {
             mePois.cone = layer.addPoi(option: cone, at: p)
             mePois.dot = layer.addPoi(option: dot, at: p)
             mePois.dot?.show()
+            meApplied.coord = c
+        } else if let old = meApplied.coord, old.distance(to: c) < 0.5 {
+            // 제자리, 건너뜀
         } else {
-            mePois.dot?.position = p
-            mePois.cone?.position = p
+            mePois.dot?.moveAt(p, duration: 0)
+            mePois.cone?.moveAt(p, duration: 0)
+            meApplied.coord = c
         }
         if let h = me.heading {
-            mePois.cone?.orientation = h * .pi / 180 - rotation
-            mePois.cone?.show()
-        } else {
-            mePois.cone?.hide()
+            let o = h * .pi / 180 - rotation
+            if meApplied.orient == nil || abs(meApplied.orient! - o) > 0.01 {
+                mePois.cone?.orientation = o
+                meApplied.orient = o
+            }
+            if !meApplied.coneShown { mePois.cone?.show(); meApplied.coneShown = true }
+        } else if meApplied.coneShown {
+            mePois.cone?.hide(); meApplied.coneShown = false
         }
     }
 
