@@ -141,6 +141,7 @@ final class MapHandle {
     @ObservationIgnored private var meApplied: (coord: CLLocationCoordinate2D?, orient: Double?, coneShown: Bool) = (nil, nil, false)
     @ObservationIgnored private var pendingTrip: Trip??
     @ObservationIgnored private var trip: Trip?
+    @ObservationIgnored private var routeSeq = 0
     private(set) var view: TripView = .all
     @ObservationIgnored private var pendingPin: CLLocationCoordinate2D??
 
@@ -331,7 +332,7 @@ final class MapHandle {
         guard let map, let tags = layer("tags"), map.getRouteManager().getRouteLayer(layerID: "route") != nil else { pendingTrip = .some(t); return }
         trip = t
         tags.clearAllItems()
-        guard let t else { map.getRouteManager().getRouteLayer(layerID: "route")?.clearAllRoutes(); return }
+        guard let t else { map.getRouteManager().getRouteLayer(layerID: "route")?.clearAllRoutes(); routeSeq = 0; return }
         let pinAnchor = CGPoint(x: 0.5, y: (8 + 50) / (56 + 16))
         style("pin-orange", pinAnchor) { Self.render(DropPinShape(color: .pinOrange).padding(8)) }
         let startID = "label-rent-\(t.start.id)-\(t.start.bikes)", endID = "label-ret-\(t.end.id)"
@@ -352,10 +353,12 @@ final class MapHandle {
         guard let map, let t = trip, let route = map.getRouteManager().getRouteLayer(layerID: "route") else { return }
         let seg = { (leg: Leg, idx: UInt) in RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: idx) }
         let idx: (UInt, UInt, UInt) = switch v { case .all: (0, 1, 0); case .rent: (2, 4, 3); case .ret: (3, 4, 2) }
-        route.clearAllRoutes()
-        let o = RouteOptions(routeID: "trip", styleID: "trip", zOrder: 0)
+        // 같은 ID로 지우고 바로 다시 넣으면 삭제가 끝나기 전이라 추가가 실패함 → 새 ID로 넣고 옛것 제거
+        routeSeq += 1
+        let o = RouteOptions(routeID: "trip-\(routeSeq)", styleID: "trip", zOrder: 0)
         o.segments = [seg(t.walkTo, idx.0), seg(t.bike, idx.1), seg(t.walkFrom, idx.2)]
         route.addRoute(option: o)?.show()
+        if routeSeq > 1 { route.removeRoute(routeID: "trip-\(routeSeq - 1)") }
         let pts: [CLLocationCoordinate2D] = switch v {
         case .all: t.allPoints
         case .rent: t.walkTo.path + [t.start.coordinate]
