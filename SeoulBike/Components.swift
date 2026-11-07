@@ -294,3 +294,69 @@ struct DropPinShape: View {
         }
     }
 }
+
+
+// 지도 뷰 전환 (전체 / 대여 / 반납). 선택 칸만 검정, 초록은 CTA 전용
+struct SegmentControl: View {
+    let items: [String]
+    @Binding var selection: Int
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(items.indices, id: \.self) { i in
+                Button { withAnimation(.snappy(duration: 0.2)) { selection = i } } label: {
+                    Text(items[i]).font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(selection == i ? .white : Color.grey600)
+                        .padding(.horizontal, 14).frame(height: 30)
+                        .background(Capsule().fill(selection == i ? Color.grey900 : .clear))
+                }
+            }
+        }
+        .padding(3).frame(height: 36)
+        .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+    }
+}
+
+// 결과 시트의 "빌릴 곳" "반납할 곳" 카드. 탭하면 지도가 그 구간으로
+struct PlaceCard: View {
+    let label: String
+    let name: String
+    let line: Text
+    var selected = false
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(.system(size: 12, weight: .bold)).foregroundStyle(Color.brandDeep)
+                Text(name).font(.system(size: 18, weight: .bold)).foregroundStyle(Color.grey900)
+                line.font(.system(size: 14)).foregroundStyle(Color.grey600).padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color(hex: 0xF9FAFB), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Color.brand : .clear, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// 지도 위 대여·반납 지점 라벨: 초록 점 + 흰 알약(태그, 대여소 이름, 자전거 수). 점 중심이 좌표
+struct StationLabel: View {
+    let tag: String
+    let name: String
+    var bikes: Int? = nil
+    static let dot: CGFloat = 18
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Color.brand).frame(width: Self.dot, height: Self.dot)
+                .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+            HStack(spacing: 6) {
+                Text(tag).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.brand))
+                Text(name).font(.system(size: 13, weight: .bold)).foregroundStyle(Color.grey900)
+                if let bikes { Text("\(bikes)대").font(.system(size: 13, weight: .bold)).foregroundStyle(Color.brandDeep) }
+            }
+            .padding(.leading, 6).padding(.trailing, 10).frame(height: 30)
+            .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+        }
+    }
+}

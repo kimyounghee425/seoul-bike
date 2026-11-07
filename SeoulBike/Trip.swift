@@ -23,6 +23,14 @@ struct Trip {
         return ("\(hours)시간권이면 충분해요", "\(hours),000원이고 \(hours * 60 - ride)분 여유 있어요")
     }
 
+    // 결과 시트 한 줄용: "1시간권 1,000원이면 충분해요"
+    var passLine: String {
+        let ride = bike.minutes
+        guard let hours = (1...3).first(where: { ride <= $0 * 60 - 5 }) else { return "3시간권으로도 부족해요" }
+        return "\(hours)시간권 \(hours),000원이면 충분해요"
+    }
+    var walkMinutes: Int { walkTo.minutes + walkFrom.minutes }
+
     // 문구는 피그마 "엣지케이스" E1~E6
     enum PlanError: Error {
         case noLocation, farFromOrigin, farFromDestination, tooClose, routeFailed, offline

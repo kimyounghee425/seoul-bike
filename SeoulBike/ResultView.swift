@@ -7,17 +7,21 @@ struct ResultView: View {
     @State private var trip: Trip?
     @State private var error: Trip.PlanError?
     @State private var expanded = true
+    @State private var view = 0 // 0 전체 1 대여 2 반납
 
     var body: some View {
         KakaoMapView(handle: map)
         .ignoresSafeArea()
         .onAppear {
             // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백
-            map.setMargins(UIEdgeInsets(top: 130, left: 40, bottom: 440, right: 40))
+            map.setMargins(margins)
             if let c = model.originPlace?.coordinate ?? model.location.coordinate { map.move(to: c, zoom: 15, animated: false) }
         }
         .onChange(of: locationKey, initial: true) { _, _ in map.setMyLocation(model.location.coordinate, heading: model.location.heading) }
-        .onChange(of: map.ready) { _, ready in if ready, let t = trip { map.setTrip(t); map.fit(t.allPoints) } }
+        .onChange(of: map.ready) { _, ready in if ready, let t = trip { map.setTrip(t) } }
+        .onChange(of: view) { _, v in map.setTripView(.init(rawValue: v) ?? .all) }
+        // 시트를 접으면 지도가 넓어지니 경로를 다시 맞춤
+        .onChange(of: expanded) { _, _ in map.setMargins(margins); map.setTripView(map.view) }
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
                 BackPill()
@@ -28,13 +32,27 @@ struct ResultView: View {
             .padding(.horizontal, 16)
         }
         .safeAreaInset(edge: .bottom) {
-            VStack(alignment: .trailing, spacing: 16) {
-                LocateButton(map: map, location: model.location).padding(.trailing, 16)
+            VStack(spacing: 12) {
+                HStack(alignment: .bottom) {
+                    if trip != nil { SegmentControl(items: ["전체", "대여", "반납"], selection: $view) }
+                    Spacer()
+                    LocateButton(map: map, location: model.location)
+                }
+                .padding(.horizontal, 16)
                 panel
             }
         }
         .task { await plan() }
+        #if DEBUG
+        .task { // 스크린샷용: -view 1|2
+            try? await Task.sleep(for: .seconds(4))
+            if let v = UserDefaults.standard.string(forKey: "view").flatMap(Int.init) { view = v }
+        }
+        #endif
     }
+
+    // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백. 오른쪽은 대여소 라벨이 뻗을 자리
+    private var margins: UIEdgeInsets { UIEdgeInsets(top: 120, left: 40, bottom: expanded ? 490 : 230, right: 110) }
 
     private var locationKey: String {
         "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
@@ -44,19 +62,22 @@ struct ResultView: View {
         BottomPanel {
             if let t = trip {
                 Text("\(t.totalMinutes)분 걸려요").font(.system(size: 26, weight: .bold)).foregroundStyle(Color.grey900)
-                Text("자전거로 \(t.bike.minutes)분, 걷는 건 \(t.walkTo.minutes + t.walkFrom.minutes)분이에요")
-                    .font(.system(size: 15)).foregroundStyle(Color.grey500).padding(.top, 6)
+                Text("걷기 \(t.walkMinutes)분 포함").font(.system(size: 14)).foregroundStyle(Color.grey500).padding(.top, 4)
                 if expanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    InfoRow(tag: "대여", title: t.start.name,
-                            detail: Text("자전거 ") + Text.em("\(t.start.bikes)대") + Text(" 남았어요"))
-                    InfoRow(tag: "반납", title: t.end.name, detail: Text("목적지까지 걸어서 \(t.walkFrom.minutes)분이에요"))
-                    InfoRow(tag: "이용권", title: t.pass.title, detail: Text(t.pass.detail))
+                    VStack(spacing: 10) {
+                        PlaceCard(label: "빌릴 곳", name: t.start.name,
+                                  line: Text(Image(systemName: "figure.walk")) + Text(" 걸어서 \(t.walkTo.minutes)분   ") + Text(Image(systemName: "bicycle")) + Text(" 자전거 ") + Text.em("\(t.start.bikes)대"),
+                                  selected: view == 1) { view = view == 1 ? 0 : 1 }
+                        PlaceCard(label: "반납할 곳", name: t.end.name,
+                                  line: Text(Image(systemName: "figure.walk")) + Text(" 목적지까지 걸어서 \(t.walkFrom.minutes)분"),
+                                  selected: view == 2) { view = view == 2 ? 0 : 2 }
+                    }
+                    .padding(.top, 16)
+                    (Text(Image(systemName: "bicycle")) + Text(" 자전거 \(t.bike.minutes)분, \(t.passLine)"))
+                        .font(.system(size: 14)).foregroundStyle(Color.grey600).padding(.top, 12)
+                    .transition(.opacity)
                 }
-                .padding(.top, 16)
-                .transition(.opacity)
-                }
-                PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, 20)
+                PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, 16)
             } else if let error {
                 Text(error.title).font(.system(size: 22, weight: .bold)).foregroundStyle(Color.grey900)
                 Text(error.detail).font(.system(size: 15)).foregroundStyle(Color.grey500).lineSpacing(3).padding(.top, 6)
@@ -102,7 +123,7 @@ struct ResultView: View {
         }
         do {
             trip = try await Trip.plan(model)
-            if let t = trip { map.setTrip(t); map.fit(t.allPoints) }
+            if let t = trip { view = 0; map.setTrip(t) }
         } catch {
             self.error = Trip.PlanError.from(error)
             map.setTrip(nil)

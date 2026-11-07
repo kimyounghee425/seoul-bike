@@ -140,21 +140,30 @@ final class MapHandle {
     @ObservationIgnored private var mePois: (dot: Poi?, cone: Poi?) = (nil, nil)
     @ObservationIgnored private var meApplied: (coord: CLLocationCoordinate2D?, orient: Double?, coneShown: Bool) = (nil, nil, false)
     @ObservationIgnored private var pendingTrip: Trip??
+    @ObservationIgnored private var trip: Trip?
+    private(set) var view: TripView = .all
     @ObservationIgnored private var pendingPin: CLLocationCoordinate2D??
 
     func attach(_ map: KakaoMap) {
         self.map = map
         let lm = map.getLabelManager()
         // 내 위치가 대여소 마커에 가려지지 않게 zOrder 크게 벌림
-        for (id, z) in [("clusters", 10), ("stations", 20), ("tags", 30), ("pins", 40), ("me", 100)] {
+        for (id, z) in [("clusters", 10), ("stations", 20), ("tags", 10030), ("pins", 10040), ("me", 10100)] {
             _ = lm.addLabelLayer(option: LabelLayerOptions(layerID: id, competitionType: .none, competitionUnit: .symbolFirst, orderType: .rank, zOrder: z))
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
+        // 도보 주황 점선, 자전거 초록 실선. 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거 흐림
         let set = RouteStyleSet(styleID: "trip")
-        set.addPattern(RoutePattern(pattern: Self.dotImage, distance: 12, symbol: nil, pinStart: false, pinEnd: false))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: UIColor(Color.grey600), level: 0, patternIndex: 0)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 8, color: UIColor(Color.brand), strokeWidth: 2, strokeColor: .white, level: 0)]))
+        let orange = UIColor(Color.pinOrange), green = UIColor(Color.brand)
+        set.addPattern(RoutePattern(pattern: Self.dot(6, orange), distance: 13, symbol: nil, pinStart: false, pinEnd: false))
+        set.addPattern(RoutePattern(pattern: Self.dot(9, orange), distance: 18, symbol: nil, pinStart: false, pinEnd: false))
+        set.addPattern(RoutePattern(pattern: Self.dot(6, orange.withAlphaComponent(0.3)), distance: 13, symbol: nil, pinStart: false, pinEnd: false))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: orange, level: 0, patternIndex: 0)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: green, strokeWidth: 2, strokeColor: .white, level: 0)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 9, color: orange, level: 0, patternIndex: 1)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: orange.withAlphaComponent(0.3), level: 0, patternIndex: 2)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 4, color: green.withAlphaComponent(0.3), level: 0)]))
         rm.addRouteStyleSet(set)
         if margins != .zero { map.setMargins(margins) }
         // 지도 뜨기 전 들어온 이동 요청 (addViews 전에 못 받았을 수 있음)
@@ -198,10 +207,11 @@ final class MapHandle {
         move(to: r.center, zoom: Self.zoom(forLatDelta: r.span.latitudeDelta), animated: animated)
     }
 
-    func fit(_ points: [CLLocationCoordinate2D]) {
+    func fit(_ points: [CLLocationCoordinate2D], animated: Bool = true) {
         guard let map, !points.isEmpty else { return }
-        let u = CameraUpdate.make(area: AreaRect(points: points.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }), levelLimit: 16)
-        map.animateCamera(cameraUpdate: u, options: CameraAnimationOptions(autoElevation: false, consecutive: false, durationInMillis: 500))
+        let u = CameraUpdate.make(area: AreaRect(points: points.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }), levelLimit: 17)
+        if animated { map.animateCamera(cameraUpdate: u, options: CameraAnimationOptions(autoElevation: false, consecutive: false, durationInMillis: 400)) }
+        else { map.moveCamera(u) }
     }
 
     func resetNorth() {
@@ -213,8 +223,13 @@ final class MapHandle {
     // MARK: 마커
 
     private func style(_ id: String, _ anchor: CGPoint = .init(x: 0.5, y: 0.5), _ make: () -> UIImage?) {
+        style(id, anchor: { _ in anchor }, make)
+    }
+
+    // anchor를 구운 이미지 크기로 계산해야 할 때 (점이 왼쪽에 붙은 라벨 등)
+    private func style(_ id: String, anchor: (CGSize) -> CGPoint, _ make: () -> UIImage?) {
         guard !styles.contains(id), let map, let img = make() else { return }
-        map.getLabelManager().addPoiStyle(PoiStyle(styleID: id, styles: [PerLevelPoiStyle(iconStyle: PoiIconStyle(symbol: img, anchorPoint: anchor), level: 0)]))
+        map.getLabelManager().addPoiStyle(PoiStyle(styleID: id, styles: [PerLevelPoiStyle(iconStyle: PoiIconStyle(symbol: img, anchorPoint: anchor(img.size)), level: 0)]))
         styles.insert(id)
     }
 
@@ -310,21 +325,43 @@ final class MapHandle {
         layer.addPoi(option: PoiOptions(styleID: "pin-orange", poiID: "pin"), at: MapPoint(longitude: c.longitude, latitude: c.latitude))?.show()
     }
 
+    enum TripView: Int { case all, rent, ret }
+
     func setTrip(_ t: Trip?) {
-        guard let map, let tags = layer("tags"), let route = map.getRouteManager().getRouteLayer(layerID: "route") else { pendingTrip = .some(t); return }
+        guard let map, let tags = layer("tags"), map.getRouteManager().getRouteLayer(layerID: "route") != nil else { pendingTrip = .some(t); return }
+        trip = t
         tags.clearAllItems()
-        route.clearAllRoutes()
-        guard let t else { return }
-        let seg = { (leg: Leg, idx: UInt) in RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: idx) }
-        let o = RouteOptions(routeID: "trip", styleID: "trip", zOrder: 0)
-        o.segments = [seg(t.walkTo, 0), seg(t.bike, 1), seg(t.walkFrom, 0)]
-        route.addRoute(option: o)?.show()
-        style("tag-start") { Self.render(MapTag(text: "대여").padding(8)) }
-        style("tag-end") { Self.render(MapTag(text: "반납").padding(8)) }
-        style("dest-dot") { Self.render(Circle().fill(Color.pinOrange).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3)).padding(4)) }
-        for (id, st, c) in [("start", "tag-start", t.start.coordinate), ("end", "tag-end", t.end.coordinate), ("dest", "dest-dot", t.destination.coordinate)] {
-            tags.addPoi(option: PoiOptions(styleID: st, poiID: id), at: MapPoint(longitude: c.longitude, latitude: c.latitude))?.show()
+        guard let t else { map.getRouteManager().getRouteLayer(layerID: "route")?.clearAllRoutes(); return }
+        let pinAnchor = CGPoint(x: 0.5, y: (8 + 50) / (56 + 16))
+        style("pin-orange", pinAnchor) { Self.render(DropPinShape(color: .pinOrange).padding(8)) }
+        let startID = "label-rent-\(t.start.id)-\(t.start.bikes)", endID = "label-ret-\(t.end.id)"
+        let labelAnchor = { (s: CGSize) in CGPoint(x: (8 + StationLabel.dot / 2) / s.width, y: 0.5) }
+        style(startID, anchor: labelAnchor) { Self.render(StationLabel(tag: "대여", name: t.start.name, bikes: t.start.bikes).padding(8)) }
+        style(endID, anchor: labelAnchor) { Self.render(StationLabel(tag: "반납", name: t.end.name).padding(8)) }
+        for (id, st, c, rank) in [("origin", "pin-orange", t.origin.coordinate, 1), ("dest", "pin-orange", t.destination.coordinate, 1),
+                                  ("start", startID, t.start.coordinate, 2), ("end", endID, t.end.coordinate, 3)] {
+            let o = PoiOptions(styleID: st, poiID: id); o.rank = rank
+            tags.addPoi(option: o, at: MapPoint(longitude: c.longitude, latitude: c.latitude))?.show()
         }
+        setTripView(view, animated: false)
+    }
+
+    // 전체: 세 구간 같은 굵기. 대여/반납: 그 도보 구간만 굵게, 나머지 흐리게 + 카메라 맞춤
+    func setTripView(_ v: TripView, animated: Bool = true) {
+        view = v
+        guard let map, let t = trip, let route = map.getRouteManager().getRouteLayer(layerID: "route") else { return }
+        let seg = { (leg: Leg, idx: UInt) in RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: idx) }
+        let idx: (UInt, UInt, UInt) = switch v { case .all: (0, 1, 0); case .rent: (2, 4, 3); case .ret: (3, 4, 2) }
+        route.clearAllRoutes()
+        let o = RouteOptions(routeID: "trip", styleID: "trip", zOrder: 0)
+        o.segments = [seg(t.walkTo, idx.0), seg(t.bike, idx.1), seg(t.walkFrom, idx.2)]
+        route.addRoute(option: o)?.show()
+        let pts: [CLLocationCoordinate2D] = switch v {
+        case .all: t.allPoints
+        case .rent: t.walkTo.path + [t.start.coordinate]
+        case .ret: t.walkFrom.path + [t.end.coordinate]
+        }
+        fit(pts, animated: animated)
     }
 
     // MARK: 이미지
@@ -335,13 +372,14 @@ final class MapHandle {
         return r.uiImage
     }
 
-    static let dotImage: UIImage = {
-        let s = CGSize(width: 6, height: 6)
-        return UIGraphicsImageRenderer(size: s).image { ctx in
-            UIColor(Color.grey600).setFill()
+    static func dot(_ d: CGFloat, _ color: UIColor) -> UIImage {
+        let s = CGSize(width: d, height: d)
+        let f = UIGraphicsImageRendererFormat(); f.scale = 2
+        return UIGraphicsImageRenderer(size: s, format: f).image { ctx in
+            color.setFill()
             ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: s))
         }
-    }()
+    }
 }
 
 // 내 위치 점. 방향 부채꼴은 별도 POI(HeadingCone)로 올려 지도 회전에 맞춰 돌림
