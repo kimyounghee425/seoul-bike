@@ -154,7 +154,7 @@ final class MapHandle {
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
-        // 도보 주황 점선, 자전거 초록 실선. 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거 흐림
+        // 도보 주황 점선, 자전거 초록 실선. 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
         let set = RouteStyleSet(styleID: "trip")
         let orange = UIColor(Color.pinOrange), green = UIColor(Color.brand)
         set.addPattern(RoutePattern(pattern: Self.dot(6, orange), distance: 13, symbol: nil, pinStart: false, pinEnd: false))
@@ -164,7 +164,7 @@ final class MapHandle {
         set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: green, strokeWidth: 2, strokeColor: .white, level: 0)]))
         set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 9, color: orange, level: 0, patternIndex: 1)]))
         set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: orange.withAlphaComponent(0.3), level: 0, patternIndex: 2)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 4, color: green.withAlphaComponent(0.3), level: 0)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, strokeWidth: 2, strokeColor: .white, level: 0)])) // 대여·반납 뷰의 자전거 구간: 흐리게 하지 않음
         rm.addRouteStyleSet(set)
         if margins != .zero { map.setMargins(margins) }
         // 지도 뜨기 전 들어온 이동 요청 (addViews 전에 못 받았을 수 있음)
