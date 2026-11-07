@@ -154,17 +154,20 @@ final class MapHandle {
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
-        // 도보 주황 점선, 자전거 초록 실선. 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
+        // 피그마 "결과 화면 최종" 값 그대로: 도보 #FF7A2F 굵기 5 둥근 점 간격 10, 자전거 #12A15C 굵기 5 실선
+        // 대여·반납 뷰: 선택 도보 7, 나머지 도보 3 알파 0.3, 자전거는 그대로
+        // 점선은 패턴만 보여야 해서 바탕선 색은 투명
+        // 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
         let set = RouteStyleSet(styleID: "trip")
         let orange = UIColor(Color.pinOrange), green = UIColor(Color.brand)
-        set.addPattern(RoutePattern(pattern: Self.dot(6, orange), distance: 13, symbol: nil, pinStart: false, pinEnd: false))
-        set.addPattern(RoutePattern(pattern: Self.dot(9, orange), distance: 18, symbol: nil, pinStart: false, pinEnd: false))
-        set.addPattern(RoutePattern(pattern: Self.dot(6, orange.withAlphaComponent(0.3)), distance: 13, symbol: nil, pinStart: false, pinEnd: false))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: orange, level: 0, patternIndex: 0)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: green, strokeWidth: 2, strokeColor: .white, level: 0)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 9, color: orange, level: 0, patternIndex: 1)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 6, color: orange.withAlphaComponent(0.3), level: 0, patternIndex: 2)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, strokeWidth: 2, strokeColor: .white, level: 0)])) // 대여·반납 뷰의 자전거 구간: 흐리게 하지 않음
+        set.addPattern(RoutePattern(pattern: Self.dot(5, orange), distance: 10, symbol: nil, pinStart: false, pinEnd: false))
+        set.addPattern(RoutePattern(pattern: Self.dot(7, orange), distance: 14, symbol: nil, pinStart: false, pinEnd: false))
+        set.addPattern(RoutePattern(pattern: Self.dot(3, orange.withAlphaComponent(0.3)), distance: 6, symbol: nil, pinStart: false, pinEnd: false))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: .clear, level: 0, patternIndex: 0)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, level: 0)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 7, color: .clear, level: 0, patternIndex: 1)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 3, color: .clear, level: 0, patternIndex: 2)]))
+        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, level: 0)]))
         rm.addRouteStyleSet(set)
         if margins != .zero { map.setMargins(margins) }
         // 지도 뜨기 전 들어온 이동 요청 (addViews 전에 못 받았을 수 있음)
