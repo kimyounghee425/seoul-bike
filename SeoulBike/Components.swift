@@ -1,23 +1,6 @@
 import MapKit
 import SwiftUI
 
-extension Color {
-    static let brand = Color(hex: 0x12A15C)
-    static let brandDeep = Color(hex: 0x0B8A4C)
-    static let brandTint = Color(hex: 0xE6F6EC)
-    static let grey900 = Color(hex: 0x191F28)
-    static let grey700 = Color(hex: 0x4E5968)
-    static let grey600 = Color(hex: 0x6B7684)
-    static let grey500 = Color(hex: 0x8B95A1)
-    static let grey400 = Color(hex: 0xB0B8C1)
-    static let grey100 = Color(hex: 0xF2F4F6)
-    static let pinOrange = Color(hex: 0xFF7A2F) // 도착, 내가 고른 곳 (초록 대여소 마커와 구분)
-
-    init(hex: UInt32) {
-        self.init(red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
-    }
-}
-
 struct PrimaryButton: View {
     let title: String
     var gray = false
@@ -38,7 +21,7 @@ struct BottomPanel<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Capsule().fill(Color(hex: 0xD1D6DB)).frame(width: 36, height: 4)
+            Capsule().fill(Token.Surface.handle).frame(width: 36, height: 4)
                 .frame(maxWidth: .infinity).padding(.bottom, 20)
             content
         }
@@ -296,7 +279,7 @@ struct DropPinShape: View {
 }
 
 
-// 지도 뷰 전환 (전체 / 대여 / 반납). 선택 칸만 검정, 초록은 CTA 전용
+// 지도 뷰 전환 (전체 / 대여 / 반납). 피그마 "세그먼트 컨트롤": 174x36 r18 p3, 칸 30 r15 좌우 14, 15 bold
 struct SegmentControl: View {
     let items: [String]
     @Binding var selection: Int
@@ -304,59 +287,192 @@ struct SegmentControl: View {
         HStack(spacing: 0) {
             ForEach(items.indices, id: \.self) { i in
                 Button { withAnimation(.snappy(duration: 0.2)) { selection = i } } label: {
-                    Text(items[i]).font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(selection == i ? .white : Color.grey600)
+                    Text(items[i]).font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(selection == i ? Color.white : Token.Text.secondary)
                         .padding(.horizontal, 14).frame(height: 30)
-                        .background(Capsule().fill(selection == i ? Color.grey900 : .clear))
+                        .background(Capsule().fill(selection == i ? Token.Text.primary : .clear))
                 }
             }
         }
-        .padding(3).frame(height: 36)
-        .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+        .padding(3)
+        .background(Capsule().fill(Token.Surface.base)).shadow(color: .black.opacity(0.08), radius: 4, y: 2)
     }
 }
 
-// 결과 시트의 "빌릴 곳" "반납할 곳" 카드. 탭하면 지도가 그 구간으로
-struct PlaceCard: View {
+// 결과 시트 카드. 피그마 "빌릴 곳 카드": fill #F2F4F6 r16 p18/20 gap6, 선택 시 초록 테두리 2
+struct PlaceCard<Facts: View>: View {
     let label: String
     let name: String
-    let line: Text
     var selected = false
+    @ViewBuilder let facts: Facts
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).font(.system(size: 12, weight: .bold)).foregroundStyle(Color.brandDeep)
-                Text(name).font(.system(size: 18, weight: .bold)).foregroundStyle(Color.grey900)
-                line.font(.system(size: 14)).foregroundStyle(Color.grey600).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label).font(.system(size: 12, weight: .bold)).foregroundStyle(Token.Brand.greenDeep)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Token.Brand.greenTint, in: RoundedRectangle(cornerRadius: 8))
+                Text(name).font(.system(size: 20, weight: .bold)).foregroundStyle(Token.Text.primary).lineLimit(1)
+                HStack(spacing: 14) { facts }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Color(hex: 0xF9FAFB), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Color.brand : .clear, lineWidth: 1.5))
+            .padding(.vertical, 18).padding(.horizontal, 20)
+            .background(Token.Surface.fill, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(selected ? Token.Brand.green : .clear, lineWidth: 2))
         }
         .buttonStyle(.plain)
     }
 }
 
-// 지도 위 대여·반납 지점 라벨: 초록 점 + 흰 알약(태그, 대여소 이름, 자전거 수). 점 중심이 좌표
-struct StationLabel: View {
-    let tag: String
+// 카드 안 사실 한 줄: 아이콘 16 + 4 + 14 medium
+struct Fact: View {
+    enum Icon { case walk, bike }
+    let icon: Icon
+    let text: String
+    var iconColor: Color = Token.Route.walk
+    var textColor: Color = Token.Text.primary
+    var weight: Font.Weight = .medium
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon == .walk ? "figure.walk" : "bicycle")
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(iconColor).frame(width: 16, height: 16)
+            Text(text).font(.system(size: 14, weight: weight)).foregroundStyle(textColor)
+        }
+    }
+}
+
+// MARK: 결과 지도 마커 (피그마 SVG 그대로, 그림자 여백 포함 캔버스)
+
+// 자전거 아이콘 선. 바퀴 r, 중심, 프레임은 SVG 좌표
+private struct BikeGlyph: SwiftUI.Shape {
+    let l: CGPoint, r: CGPoint, rad: CGFloat, frame: [(CGPoint, CGPoint)]
+    func path(in _: CGRect) -> Path {
+        var p = Path()
+        p.addEllipse(in: CGRect(x: l.x - rad, y: l.y - rad, width: rad * 2, height: rad * 2))
+        p.addEllipse(in: CGRect(x: r.x - rad, y: r.y - rad, width: rad * 2, height: rad * 2))
+        for (a, b) in frame { p.move(to: a); p.addLine(to: b) }
+        return p
+    }
+}
+
+// 대여소 핀: 44x54 캔버스, 끝 (22,44)
+struct RentPin: View {
+    static let size = CGSize(width: 44, height: 54)
+    static let tip = CGPoint(x: 22, y: 44)
+    var body: some View {
+        ZStack {
+            Teardrop().fill(Token.Brand.green).overlay(Teardrop().stroke(.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+            BikeGlyph(l: .init(x: 16.5, y: 22.5), r: .init(x: 27.5, y: 22.5), rad: 3.3, frame: [
+                (.init(x: 27.5, y: 22.5), .init(x: 25.5, y: 16.5)), (.init(x: 25.5, y: 16.5), .init(x: 19.5, y: 16.5)),
+                (.init(x: 19.5, y: 16.5), .init(x: 16.5, y: 22.5)), (.init(x: 19.5, y: 16.5), .init(x: 22, y: 22.5)),
+                (.init(x: 22, y: 22.5), .init(x: 25.5, y: 16.5)), (.init(x: 18, y: 14), .init(x: 21, y: 14)),
+            ]).stroke(.white, style: .init(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+    }
+    private struct Teardrop: SwiftUI.Shape {
+        func path(in _: CGRect) -> Path {
+            var p = Path()
+            p.move(to: .init(x: 22, y: 44))
+            p.addCurve(to: .init(x: 7, y: 20), control1: .init(x: 22, y: 44), control2: .init(x: 7, y: 30.5))
+            p.addArc(center: .init(x: 22, y: 20), radius: 15, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+            p.addCurve(to: .init(x: 22, y: 44), control1: .init(x: 37, y: 30.5), control2: .init(x: 22, y: 44))
+            p.closeSubpath()
+            return p
+        }
+    }
+}
+
+// 반납소 핀: 42x49 캔버스, 끝 (21,39). 둥근 사각 + 깃발
+struct ReturnPin: View {
+    static let size = CGSize(width: 42, height: 49)
+    static let tip = CGPoint(x: 21, y: 39)
+    var body: some View {
+        ZStack {
+            PinBody().fill(Token.Marker.ret).overlay(PinBody().stroke(.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+            Path { p in p.move(to: .init(x: 17, y: 26.5)); p.addLine(to: .init(x: 17, y: 11.5)) }
+                .stroke(.white, style: .init(lineWidth: 1.8, lineCap: .round))
+            Path { p in
+                p.move(to: .init(x: 17.5, y: 12)); p.addLine(to: .init(x: 26.5, y: 12)); p.addLine(to: .init(x: 24, y: 15.5))
+                p.addLine(to: .init(x: 26.5, y: 19)); p.addLine(to: .init(x: 17.5, y: 19)); p.closeSubpath()
+            }.fill(.white)
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+    }
+    private struct PinBody: SwiftUI.Shape {
+        func path(in _: CGRect) -> Path {
+            var p = Path(roundedRect: CGRect(x: 7, y: 5, width: 28, height: 28), cornerRadius: 8)
+            p.move(to: .init(x: 17, y: 33)); p.addLine(to: .init(x: 21, y: 39)); p.addLine(to: .init(x: 25, y: 33))
+            return p
+        }
+    }
+}
+
+// 내 위치와 대여소가 같은 자리일 때: 파란 링 + 흰 링 + 초록 원 + 자전거, 뒤에 halo 48. 캔버스 48, 중심 (24,24)
+struct ComboMarker: View {
+    static let size = CGSize(width: 48, height: 48)
+    var body: some View {
+        ZStack {
+            Circle().fill(Token.Marker.location.opacity(0.2)).frame(width: 48, height: 48)
+            ZStack {
+                Circle().fill(Token.Marker.location).frame(width: 32, height: 32).shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+                Circle().fill(.white).frame(width: 27, height: 27)
+                Circle().fill(Token.Brand.green).frame(width: 23, height: 23)
+                BikeGlyph(l: .init(x: 17.6, y: 21.8), r: .init(x: 26.4, y: 21.8), rad: 2.7, frame: [
+                    (.init(x: 26.4, y: 21.8), .init(x: 24.8, y: 17)), (.init(x: 24.8, y: 17), .init(x: 20, y: 17)),
+                    (.init(x: 20, y: 17), .init(x: 17.6, y: 21.8)), (.init(x: 20, y: 17), .init(x: 22, y: 21.8)),
+                    (.init(x: 22, y: 21.8), .init(x: 24.8, y: 17)), (.init(x: 18.8, y: 15.4), .init(x: 21.2, y: 15.4)),
+                ]).stroke(.white, style: .init(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                    .frame(width: 44, height: 44).offset(y: 2) // SVG 44 캔버스 중심 (22,20) 보정
+            }
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+    }
+}
+
+// 도착 점: 12, 흰 테두리 3
+struct DestDot: View {
+    var color: Color = Token.Route.walk
+    var body: some View {
+        Circle().fill(color).frame(width: 12, height: 12).overlay(Circle().stroke(.white, lineWidth: 3))
+            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+    }
+}
+
+// 핀 옆 라벨: 흰 알약 30 r18, 칩 18 r8 12 bold, 이름 14 bold, 대수 14 bold 진초록
+struct PinLabel: View {
+    let chip: String
+    let chipColor: Color
     let name: String
     var bikes: Int? = nil
-    static let dot: CGFloat = 18
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Color.brand).frame(width: Self.dot, height: Self.dot)
-                .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.2), radius: 2, y: 1)
-            HStack(spacing: 6) {
-                Text(tag).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.brand))
-                Text(name).font(.system(size: 13, weight: .bold)).foregroundStyle(Color.grey900)
-                if let bikes { Text("\(bikes)대").font(.system(size: 13, weight: .bold)).foregroundStyle(Color.brandDeep) }
-            }
-            .padding(.leading, 6).padding(.trailing, 10).frame(height: 30)
-            .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+        HStack(spacing: 8) {
+            Text(chip).font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                .padding(.horizontal, 7).frame(height: 18).background(chipColor, in: RoundedRectangle(cornerRadius: 8))
+            if !name.isEmpty { Text(name).font(.system(size: 14, weight: .bold)).foregroundStyle(Token.Text.primary).lineLimit(1) }
+            if let bikes { Text("\(bikes)대").font(.system(size: 14, weight: .bold)).foregroundStyle(Token.Brand.greenDeep) }
         }
+        .padding(.leading, 10).padding(.trailing, 12).frame(height: 30)
+        .fixedSize() // 이미지로 구울 때 글자가 줄임표로 눌리지 않게
+        .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+    }
+}
+
+// 핀 + 라벨을 한 이미지로. 라벨은 핀 머리 높이에 맞춰 왼쪽 또는 오른쪽. tip은 이 뷰 안 좌표
+struct LabeledPin<Pin: View>: View {
+    let pin: Pin
+    let pinSize: CGSize
+    let headCenterY: CGFloat
+    let label: PinLabel
+    let labelOnLeft: Bool
+    static var pad: CGFloat { 10 } // 그림자 여백
+    var body: some View {
+        HStack(alignment: .top, spacing: -6) {
+            if labelOnLeft { label.padding(.top, headCenterY - 15); pin.frame(width: pinSize.width, height: pinSize.height) }
+            else { pin.frame(width: pinSize.width, height: pinSize.height); label.padding(.top, headCenterY - 15) }
+        }
+        .padding(Self.pad)
     }
 }

@@ -9,9 +9,12 @@ struct Trip {
     let walkTo: Leg
     let bike: Leg
     let walkFrom: Leg
+    // 출발지(내 위치)와 대여소 근접: same 복합 마커, close 마커 둘, 둘 다 도보선 없음 (피그마 C2 C3 C8)
+    enum Near { case far, close, same }
+    var near: Near = .far
 
     var allPoints: [CLLocationCoordinate2D] { walkTo.path + bike.path + walkFrom.path }
-    var totalMinutes: Int { walkTo.minutes + bike.minutes + walkFrom.minutes }
+    var totalMinutes: Int { (near == .far ? walkTo.minutes : 0) + bike.minutes + walkFrom.minutes }
     var totalKm: String { String(format: "%.1fkm", Double(walkTo.meters + bike.meters + walkFrom.meters) / 1000) }
 
     // 일일권 1·2·3시간 (1,000원/시간), 반납 지연 대비 5분 여유
@@ -29,7 +32,7 @@ struct Trip {
         guard let hours = (1...3).first(where: { ride <= $0 * 60 - 5 }) else { return "3시간권으로도 부족해요" }
         return "\(hours)시간권 \(hours),000원이면 충분해요"
     }
-    var walkMinutes: Int { walkTo.minutes + walkFrom.minutes }
+    var walkMinutes: Int { (near == .far ? walkTo.minutes : 0) + walkFrom.minutes }
 
     // 문구는 피그마 "엣지케이스" E1~E6
     enum PlanError: Error {
@@ -83,11 +86,21 @@ struct Trip {
         async let w1 = Kakao.route(.walk, from: o.coordinate, to: s.coordinate)
         async let b = Kakao.route(.bicycle, from: s.coordinate, to: e.coordinate)
         async let w2 = Kakao.route(.walk, from: e.coordinate, to: d.coordinate)
-        return try await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, bike: b, walkFrom: w2)
+        var t = try await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, bike: b, walkFrom: w2)
+        t.near = near(origin: o.coordinate, station: s.coordinate, isMyLocation: model.origin == nil, accuracy: model.location.accuracy)
+        return t
     }
 }
 
 extension Trip {
+    // d ≤ min(max(15, 정확도), 30) → 같은 자리, 50m 이하 → 가까움. 정확도 65m 넘으면 합치지 않음
+    static func near(origin: CLLocationCoordinate2D, station: CLLocationCoordinate2D, isMyLocation: Bool, accuracy: Double?) -> Near {
+        let d = origin.distance(to: station)
+        if d > 50 { return .far }
+        guard isMyLocation, let acc = accuracy, acc <= 65 else { return .close }
+        return d <= min(max(15, acc), 30) ? .same : .close
+    }
+
     // assert 기반 자체 점검
     static func selfCheck() {
         func trip(_ min: Int) -> Trip {
@@ -101,6 +114,15 @@ extension Trip {
         assert(trip(55).pass.title.hasPrefix("1시간권"))
         assert(trip(56).pass.title.hasPrefix("2시간권"))
         assert(trip(176).pass.title.hasPrefix("3시간권으로도"))
+        let a = CLLocationCoordinate2D(latitude: 37.5446, longitude: 127.0565)
+        let at = { (m: Double) in CLLocationCoordinate2D(latitude: a.latitude + m / 111_000, longitude: a.longitude) }
+        assert(near(origin: a, station: at(10), isMyLocation: true, accuracy: 5) == .same)
+        assert(near(origin: a, station: at(20), isMyLocation: true, accuracy: 5) == .close)   // 기준 15m
+        assert(near(origin: a, station: at(25), isMyLocation: true, accuracy: 28) == .same)   // 정확도만큼 넓힘
+        assert(near(origin: a, station: at(40), isMyLocation: true, accuracy: 60) == .close)  // 30m 상한
+        assert(near(origin: a, station: at(10), isMyLocation: true, accuracy: 80) == .close)  // 정확도 나쁨
+        assert(near(origin: a, station: at(10), isMyLocation: false, accuracy: 5) == .close)  // 검색한 출발지
+        assert(near(origin: a, station: at(70), isMyLocation: true, accuracy: 5) == .far)
     }
 }
 

@@ -51,8 +51,8 @@ struct ResultView: View {
         #endif
     }
 
-    // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백. 오른쪽은 대여소 라벨이 뻗을 자리
-    private var margins: UIEdgeInsets { UIEdgeInsets(top: 120, left: 40, bottom: expanded ? 490 : 230, right: 110) }
+    // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백. 라벨 폭은 MapHandle이 뷰별로 더함
+    private var margins: UIEdgeInsets { UIEdgeInsets(top: 120, left: 40, bottom: expanded ? 490 : 230, right: 40) }
 
     private var locationKey: String {
         "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
@@ -61,20 +61,27 @@ struct ResultView: View {
     @ViewBuilder private var panel: some View {
         BottomPanel {
             if let t = trip {
-                Text("\(t.totalMinutes)분 걸려요").font(.system(size: 26, weight: .bold)).foregroundStyle(Color.grey900)
-                Text("걷기 \(t.walkMinutes)분 포함").font(.system(size: 14)).foregroundStyle(Color.grey500).padding(.top, 4)
+                // 피그마 "결과 화면 최종": 제목 블록 위 20, 제목 26 bold, 보조 14 regular secondary, 간격 2
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(t.totalMinutes)분 걸려요").font(.system(size: 26, weight: .bold)).foregroundStyle(Token.Text.primary)
+                    Text("걷기 \(t.walkMinutes)분 포함").font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
+                } // 핸들 아래 20은 BottomPanel이 줌
                 if expanded {
                     VStack(spacing: 10) {
-                        PlaceCard(label: "빌릴 곳", name: t.start.name,
-                                  line: Text(Image(systemName: "figure.walk")) + Text(" 걸어서 \(t.walkTo.minutes)분   ") + Text(Image(systemName: "bicycle")) + Text(" 자전거 ") + Text.em("\(t.start.bikes)대"),
-                                  selected: view == 1) { view = view == 1 ? 0 : 1 }
-                        PlaceCard(label: "반납할 곳", name: t.end.name,
-                                  line: Text(Image(systemName: "figure.walk")) + Text(" 목적지까지 걸어서 \(t.walkFrom.minutes)분"),
-                                  selected: view == 2) { view = view == 2 ? 0 : 2 }
+                        PlaceCard(label: "빌릴 곳", name: t.start.name, selected: view == 1) {
+                            Fact(icon: .walk, text: t.near == .far ? "걸어서 \(t.walkTo.minutes)분" : "바로 앞이에요")
+                            Fact(icon: .bike, text: "자전거 \(t.start.bikes)대", iconColor: Token.Brand.green, textColor: Token.Brand.greenDeep)
+                        } action: { view = view == 1 ? 0 : 1 }
+                        PlaceCard(label: "반납할 곳", name: t.end.name, selected: view == 2) {
+                            Fact(icon: .walk, text: "목적지까지 걸어서 \(t.walkFrom.minutes)분")
+                        } action: { view = view == 2 ? 0 : 2 }
                     }
                     .padding(.top, 16)
-                    (Text(Image(systemName: "bicycle")) + Text(" 자전거 \(t.bike.minutes)분, \(t.passLine)"))
-                        .font(.system(size: 14)).foregroundStyle(Color.grey600).padding(.top, 12)
+                    HStack(spacing: 6) {
+                        Fact(icon: .bike, text: "자전거 \(t.bike.minutes)분,", iconColor: Token.Text.secondary, textColor: Token.Text.secondary)
+                        Text(t.passLine).font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
+                    }
+                    .padding(.top, 14).padding(.bottom, 2).padding(.leading, 4)
                     .transition(.opacity)
                 }
                 PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, 16)

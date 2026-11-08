@@ -100,6 +100,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     var status: CLAuthorizationStatus = .notDetermined
     var coordinate: CLLocationCoordinate2D?
     var heading: Double? // 진북 기준 기기 방향(도)
+    var accuracy: Double? // 수평 정확도(m)
 
     var denied: Bool { status == .denied || status == .restricted }
 
@@ -123,6 +124,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
         coordinate = locs.last?.coordinate
+        accuracy = locs.last.map(\.horizontalAccuracy).flatMap { $0 >= 0 ? $0 : nil }
     }
 }
 

@@ -142,6 +142,7 @@ final class MapHandle {
     @ObservationIgnored private var pendingTrip: Trip??
     @ObservationIgnored private var trip: Trip?
     @ObservationIgnored private var routeSeq = 0
+    @ObservationIgnored private var hideMe = false // 복합 마커일 때 내 위치 점 숨김
     private(set) var view: TripView = .all
     @ObservationIgnored private var pendingPin: CLLocationCoordinate2D??
 
@@ -154,13 +155,25 @@ final class MapHandle {
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
-        // 도보 #FF7A2F 실선, 자전거 #12A15C 실선, 둘 다 굵기 5
-        // 대여·반납 뷰에서는 선택 안 된 도보만 투명도 0.3
-        // 0 도보 / 1 자전거 / 2 도보 선택 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
+        // 피그마 101:31 / 101:684 실측. 선 색 = 흰 케이싱, 그 위 패턴
+        // 도보: 케이싱 7 + 주황 점 5 간격 9 / 선택 케이싱 12 + 점 7 간격 12 / 비활성 케이싱 7 + #FFC6A6 점
+        // 자전거: #2A4FE0 8 + 흰 테두리 3(피그마 2.5, SDK는 정수만) + 흰 쉐브론 38 / 비활성 #C3CDF7 + 진파랑 쉐브론 57
         let set = RouteStyleSet(styleID: "trip")
-        let orange = UIColor(Color.pinOrange), green = UIColor(Color.brand)
-        for (w, c) in [(5, orange), (5, green), (5, orange), (5, orange.withAlphaComponent(0.3)), (5, green)] {
-            set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: UInt(w), color: c, level: 0)]))
+        let walk = UIColor(Token.Route.walk), walkOff = UIColor(Token.Route.walkInactive)
+        let bike = UIColor(Token.Route.bike), bikeOff = UIColor(Token.Route.bikeInactive)
+        for p in [RoutePattern(pattern: Self.dot(5, walk), distance: 9, symbol: nil, pinStart: false, pinEnd: false),
+                  RoutePattern(pattern: Self.dot(7, walk), distance: 12, symbol: nil, pinStart: false, pinEnd: false),
+                  RoutePattern(pattern: Self.dot(5, walkOff), distance: 9, symbol: nil, pinStart: false, pinEnd: false),
+                  RoutePattern(pattern: Self.chevron(.white, 1.8), distance: 38, symbol: nil, pinStart: false, pinEnd: false),
+                  RoutePattern(pattern: Self.chevron(bike, 2), distance: 57, symbol: nil, pinStart: false, pinEnd: false)] {
+            set.addPattern(p)
+        }
+        for st in [PerLevelRouteStyle(width: 7, color: .white, level: 0, patternIndex: 0),   // 0 도보
+                   PerLevelRouteStyle(width: 12, color: .white, level: 0, patternIndex: 1),  // 1 도보 선택
+                   PerLevelRouteStyle(width: 7, color: .white, level: 0, patternIndex: 2),   // 2 도보 비활성
+                   PerLevelRouteStyle(width: 8, color: bike, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 3),    // 3 자전거
+                   PerLevelRouteStyle(width: 8, color: bikeOff, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 4)] { // 4 자전거 비활성
+            set.addStyle(RouteStyle(styles: [st]))
         }
         rm.addRouteStyleSet(set)
         if margins != .zero { map.setMargins(margins) }
@@ -282,7 +295,7 @@ final class MapHandle {
     // 좌표·방향이 실제로 바뀐 경우에만 갱신. 카메라 틱(50ms)마다 position을 다시 쓰면 SDK가 지웠다 그려서 깜빡임
     private func applyMe() {
         guard let layer = layer("me") else { return }
-        guard let c = me.coord else {
+        guard let c = me.coord, !hideMe else {
             if mePois.dot != nil { layer.clearAllItems(); mePois = (nil, nil); meApplied = (nil, nil, false) }
             return
         }
@@ -326,45 +339,123 @@ final class MapHandle {
     enum TripView: Int { case all, rent, ret }
 
     func setTrip(_ t: Trip?) {
-        guard let map, let tags = layer("tags"), map.getRouteManager().getRouteLayer(layerID: "route") != nil else { pendingTrip = .some(t); return }
+        guard let map, layer("tags") != nil, map.getRouteManager().getRouteLayer(layerID: "route") != nil else { pendingTrip = .some(t); return }
         trip = t
-        tags.clearAllItems()
-        guard let t else { map.getRouteManager().getRouteLayer(layerID: "route")?.clearAllRoutes(); routeSeq = 0; return }
-        let pinAnchor = CGPoint(x: 0.5, y: (8 + 50) / (56 + 16))
-        style("pin-orange", pinAnchor) { Self.render(DropPinShape(color: .pinOrange).padding(8)) }
-        let startID = "label-rent-\(t.start.id)-\(t.start.bikes)", endID = "label-ret-\(t.end.id)"
-        let labelAnchor = { (s: CGSize) in CGPoint(x: (8 + StationLabel.dot / 2) / s.width, y: 0.5) }
-        style(startID, anchor: labelAnchor) { Self.render(StationLabel(tag: "대여", name: t.start.name, bikes: t.start.bikes).padding(8)) }
-        style(endID, anchor: labelAnchor) { Self.render(StationLabel(tag: "반납", name: t.end.name).padding(8)) }
-        for (id, st, c, rank) in [("origin", "pin-orange", t.origin.coordinate, 1), ("dest", "pin-orange", t.destination.coordinate, 1),
-                                  ("start", startID, t.start.coordinate, 2), ("end", endID, t.end.coordinate, 3)] {
-            let o = PoiOptions(styleID: st, poiID: id); o.rank = rank
-            tags.addPoi(option: o, at: MapPoint(longitude: c.longitude, latitude: c.latitude))?.show()
-        }
+        hideMe = t?.near == .same
+        applyMe()
+        guard t != nil else { layer("tags")?.clearAllItems(); map.getRouteManager().getRouteLayer(layerID: "route")?.clearAllRoutes(); routeSeq = 0; return }
         setTripView(view, animated: false)
     }
 
-    // 전체: 세 구간 같은 굵기. 대여/반납: 그 도보 구간만 굵게, 나머지 흐리게 + 카메라 맞춤
+    // 라벨 방향. 전체: 대여·반납 라벨이 서로 바깥쪽 (안 겹치게) / 대여·반납 보기: 화면 안쪽 (가장자리에 안 잘리게)
+    private func labelSides(_ t: Trip, _ v: TripView) -> (rentLeft: Bool, retLeft: Bool) {
+        let s = t.start.coordinate, e = t.end.coordinate
+        switch v {
+        case .all: return (s.longitude <= e.longitude, e.longitude < s.longitude)
+        case .rent: return (t.origin.coordinate.longitude < s.longitude, e.longitude < s.longitude)
+        case .ret: return (s.longitude < e.longitude, t.destination.coordinate.longitude < e.longitude)
+        }
+    }
+
+    private func placeMarkers(_ t: Trip, _ v: TripView) -> (rentW: CGFloat, retW: CGFloat, sides: (rentLeft: Bool, retLeft: Bool)) {
+        guard let tags = layer("tags") else { return (0, 0, (false, false)) }
+        tags.clearAllItems()
+        let sides = labelSides(t, v)
+        let pad = LabeledPin<RentPin>.pad
+        func add(_ id: String, _ st: String, _ c: CLLocationCoordinate2D, rank: Int) {
+            let o = PoiOptions(styleID: st, poiID: id); o.rank = rank
+            tags.addPoi(option: o, at: MapPoint(longitude: c.longitude, latitude: c.latitude))?.show()
+        }
+        func pinStyle<P: View>(_ id: String, pin: P, size: CGSize, tip: CGPoint, head: CGFloat, label: PinLabel, left: Bool) {
+            style(id, anchor: { s in CGPoint(x: (left ? s.width - pad - (size.width - tip.x) : pad + tip.x) / s.width, y: (pad + tip.y) / s.height) }) {
+                Self.render(LabeledPin(pin: pin, pinSize: size, headCenterY: head, label: label, labelOnLeft: left))
+            }
+        }
+        // 피그마 C1: 핀 머리 중심 대여 (22,20), 반납 (21,19), 복합 (24,24)
+        // 전체 보기는 실제 경로가 넓으면 이름 라벨이 화면 끝에 잘려서 칩만 (이름은 시트 카드에)
+        let compact = v == .all
+        let rentLabel = PinLabel(chip: "대여", chipColor: Token.Brand.green, name: compact ? "" : t.start.name, bikes: t.start.bikes)
+        let retLabel = PinLabel(chip: "반납", chipColor: Token.Marker.returnChip, name: compact ? "" : t.end.name)
+        let same = t.near == .same
+        let rentID = "\(same ? "combo" : "rent")-\(t.start.id)-\(t.start.bikes)-\(sides.rentLeft)-\(compact)"
+        if same { pinStyle(rentID, pin: ComboMarker(), size: ComboMarker.size, tip: .init(x: 24, y: 24), head: 24, label: rentLabel, left: sides.rentLeft) }
+        else { pinStyle(rentID, pin: RentPin(), size: RentPin.size, tip: RentPin.tip, head: 20, label: rentLabel, left: sides.rentLeft) }
+        let retID = "ret-\(t.end.id)-\(sides.retLeft)-\(compact)"
+        pinStyle(retID, pin: ReturnPin(), size: ReturnPin.size, tip: ReturnPin.tip, head: 19, label: retLabel, left: sides.retLeft)
+        add("start", rentID, t.start.coordinate, rank: 3)
+        add("end", retID, t.end.coordinate, rank: 2)
+        style("dest-dot") { Self.render(DestDot().padding(6)) }
+        add("dest", "dest-dot", t.destination.coordinate, rank: 1)
+        // 출발지를 검색으로 정했으면 내 위치 점 대신 작은 점 (피그마에 없는 경우, 도착 점과 같은 모양 진회색)
+        if t.origin.name != "내 위치" {
+            style("origin-dot") { Self.render(DestDot(color: Token.Text.primary).padding(6)) }
+            add("origin", "origin-dot", t.origin.coordinate, rank: 1)
+        }
+        let w = { (l: PinLabel) in (Self.render(l)?.size.width ?? 200) + 10 }
+        return (w(rentLabel), w(retLabel), sides)
+    }
+
+    // 구간마다 경로를 따로 그려 겹칠 때 위아래 순서를 정함
+    // 전체: 자전거가 위. 대여/반납: 선택 도보가 위, 나머지 비활성
     func setTripView(_ v: TripView, animated: Bool = true) {
         view = v
         guard let map, let t = trip, let route = map.getRouteManager().getRouteLayer(layerID: "route") else { return }
-        let seg = { (leg: Leg, idx: UInt) in RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: idx) }
-        let idx: (UInt, UInt, UInt) = switch v { case .all: (0, 1, 0); case .rent: (2, 4, 3); case .ret: (3, 4, 2) }
-        // 같은 ID로 지우고 바로 다시 넣으면 삭제가 끝나기 전이라 추가가 실패함 → 새 ID로 넣고 옛것 제거
+        let labels = placeMarkers(t, v)
+        let (walkTo, bike, walkFrom): ((UInt, Int), (UInt, Int), (UInt, Int)) = switch v {
+        case .all: ((0, 1), (3, 2), (0, 1))
+        case .rent: ((1, 3), (4, 1), (2, 0))
+        case .ret: ((2, 0), (4, 1), (1, 3))
+        }
+        let old = (1...3).map { "trip-\(routeSeq)-\($0)" }
         routeSeq += 1
-        let o = RouteOptions(routeID: "trip-\(routeSeq)", styleID: "trip", zOrder: 0)
-        o.segments = [seg(t.walkTo, idx.0), seg(t.bike, idx.1), seg(t.walkFrom, idx.2)]
-        route.addRoute(option: o)?.show()
-        if routeSeq > 1 { route.removeRoute(routeID: "trip-\(routeSeq - 1)") }
-        let pts: [CLLocationCoordinate2D] = switch v {
+        var legs: [(Leg, (UInt, Int))] = [(t.bike, bike), (t.walkFrom, walkFrom)]
+        if t.near == .far { legs.append((t.walkTo, walkTo)) } // 50m 이하는 도보선 없음
+        for (i, (leg, st)) in legs.enumerated() {
+            let o = RouteOptions(routeID: "trip-\(routeSeq)-\(i + 1)", styleID: "trip", zOrder: st.1)
+            o.segments = [RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: st.0)]
+            route.addRoute(option: o)?.show()
+        }
+        // 같은 ID로 지우고 바로 다시 넣으면 삭제 전이라 추가가 실패함 → 새 ID로 넣고 옛것 제거
+        if routeSeq > 1 { route.removeRoutes(routeIDs: old) }
+        let fitPts: [CLLocationCoordinate2D] = switch v {
         case .all: t.allPoints
-        case .rent: t.walkTo.path + [t.start.coordinate]
+        case .rent: t.near == .far ? t.walkTo.path + [t.start.coordinate] : [t.origin.coordinate, t.start.coordinate]
         case .ret: t.walkFrom.path + [t.end.coordinate]
         }
-        fit(pts, animated: animated)
+        // 전체 보기는 라벨이 바깥쪽이라 그 폭만큼 여백 추가
+        var m = margins
+        if v == .all {
+            let left = max(labels.sides.rentLeft ? labels.rentW : 0, labels.sides.retLeft ? labels.retW : 0)
+            let right = max(labels.sides.rentLeft ? 0 : labels.rentW, labels.sides.retLeft ? 0 : labels.retW)
+            // 양쪽 합이 화면 폭 - 140을 넘으면 맞출 영역이 없어 전국 지도로 축소됨 → 비율로 줄임
+            let room = max(0, (map.viewRect.width - 140) - (m.left + m.right))
+            let want = left + right
+            let k = want > room && want > 0 ? room / want : 1
+            m.left += left * k; m.right += right * k
+        }
+        map.setMargins(m)
+        fit(fitPts, animated: animated)
     }
 
     // MARK: 이미지
+
+    static func dot(_ d: CGFloat, _ color: UIColor) -> UIImage {
+        let f = UIGraphicsImageRendererFormat(); f.scale = 2
+        return UIGraphicsImageRenderer(size: .init(width: d, height: d), format: f).image { ctx in
+            color.setFill(); ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: d, height: d))
+        }
+    }
+
+    // 피그마 쉐브론 6x3.2 (8x5 캔버스). 진행 방향 = 이미지 위쪽
+    static func chevron(_ color: UIColor, _ w: CGFloat) -> UIImage {
+        let f = UIGraphicsImageRendererFormat(); f.scale = 2
+        return UIGraphicsImageRenderer(size: .init(width: 8, height: 5), format: f).image { _ in
+            let p = UIBezierPath()
+            p.move(to: .init(x: 0.9, y: 4.1)); p.addLine(to: .init(x: 4, y: 0.9)); p.addLine(to: .init(x: 7.1, y: 4.1))
+            p.lineWidth = w; p.lineCapStyle = .round; p.lineJoinStyle = .round
+            color.setStroke(); p.stroke()
+        }
+    }
 
     static func render<V: View>(_ v: V) -> UIImage? {
         let r = ImageRenderer(content: v)
@@ -373,19 +464,20 @@ final class MapHandle {
     }
 }
 
-// 내 위치 점. 방향 부채꼴은 별도 POI(HeadingCone)로 올려 지도 회전에 맞춰 돌림
+// 내 위치 점. 피그마 "내 위치": #3182F6 16, 흰 테두리 3, halo 40 @0.2. 방향 부채꼴은 별도 POI
 struct MyLocationDot: View {
     var body: some View {
         ZStack {
-            Circle().fill(.white).frame(width: 22, height: 22).shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-            Circle().fill(Color.brand).frame(width: 14, height: 14)
+            Circle().fill(Token.Marker.location.opacity(0.2)).frame(width: 40, height: 40)
+            Circle().fill(Token.Marker.location).frame(width: 16, height: 16)
+                .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.25), radius: 2, y: 1)
         }
     }
 }
 
 struct HeadingCone: View {
     var body: some View {
-        Cone().fill(RadialGradient(colors: [Color.brand.opacity(0.35), Color.brand.opacity(0)], center: .center, startRadius: 6, endRadius: 40))
+        Cone().fill(RadialGradient(colors: [Token.Marker.location.opacity(0.35), Token.Marker.location.opacity(0)], center: .center, startRadius: 6, endRadius: 40))
             .frame(width: 80, height: 80)
     }
 
