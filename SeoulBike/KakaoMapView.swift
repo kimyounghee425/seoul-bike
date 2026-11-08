@@ -155,24 +155,21 @@ final class MapHandle {
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
-        // 피그마 101:31 / 101:684 실측. 선 색 = 흰 케이싱, 그 위 패턴
-        // 도보: 케이싱 7 + 주황 점 5 간격 9 / 선택 케이싱 12 + 점 7 간격 12 / 비활성 케이싱 7 + #FFC6A6 점
         // 자전거: #2A4FE0 8 + 흰 테두리 3(피그마 2.5, SDK는 정수만) + 흰 쉐브론 38 / 비활성 #C3CDF7 + 진파랑 쉐브론 57
+        // 도보: SDK에 점선이 없고 패턴은 정사각형으로만 찍혀서, 경로를 막대 조각으로 잘라 그림 (drawRoutes)
         let set = RouteStyleSet(styleID: "trip")
         let walk = UIColor(Token.Route.walk), walkOff = UIColor(Token.Route.walkInactive)
         let bike = UIColor(Token.Route.bike), bikeOff = UIColor(Token.Route.bikeInactive)
-        for p in [RoutePattern(pattern: Self.dot(5, walk), distance: 9, symbol: nil, pinStart: false, pinEnd: false),
-                  RoutePattern(pattern: Self.dot(7, walk), distance: 12, symbol: nil, pinStart: false, pinEnd: false),
-                  RoutePattern(pattern: Self.dot(5, walkOff), distance: 9, symbol: nil, pinStart: false, pinEnd: false),
-                  RoutePattern(pattern: Self.chevron(.white, 1.8), distance: 38, symbol: nil, pinStart: false, pinEnd: false),
-                  RoutePattern(pattern: Self.chevron(bike, 2), distance: 57, symbol: nil, pinStart: false, pinEnd: false)] {
-            set.addPattern(p)
-        }
-        for st in [PerLevelRouteStyle(width: 7, color: .white, level: 0, patternIndex: 0),   // 0 도보
-                   PerLevelRouteStyle(width: 12, color: .white, level: 0, patternIndex: 1),  // 1 도보 선택
-                   PerLevelRouteStyle(width: 7, color: .white, level: 0, patternIndex: 2),   // 2 도보 비활성
-                   PerLevelRouteStyle(width: 8, color: bike, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 3),    // 3 자전거
-                   PerLevelRouteStyle(width: 8, color: bikeOff, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 4)] { // 4 자전거 비활성
+        set.addPattern(RoutePattern(pattern: Self.chevron(.white, 1.8), distance: 38, symbol: nil, pinStart: false, pinEnd: false))
+        set.addPattern(RoutePattern(pattern: Self.chevron(bike, 2), distance: 57, symbol: nil, pinStart: false, pinEnd: false))
+        for st in [PerLevelRouteStyle(width: 8, color: bike, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 0),    // 0 자전거
+                   PerLevelRouteStyle(width: 8, color: bikeOff, strokeWidth: 3, strokeColor: .white, level: 0, patternIndex: 1),  // 1 자전거 비활성
+                   PerLevelRouteStyle(width: 5, color: walk, level: 0),       // 2 도보 막대
+                   PerLevelRouteStyle(width: 7, color: walk, level: 0),       // 3 도보 막대 선택
+                   PerLevelRouteStyle(width: 5, color: walkOff, level: 0),    // 4 도보 막대 비활성
+                   PerLevelRouteStyle(width: 5, color: .clear, level: 0),     // 5 막대 사이 빈칸
+                   PerLevelRouteStyle(width: 9, color: .white, level: 0),     // 6 도보 흰 바탕
+                   PerLevelRouteStyle(width: 12, color: .white, level: 0)] {  // 7 도보 흰 바탕 선택
             set.addStyle(RouteStyle(styles: [st]))
         }
         rm.addRouteStyleSet(set)
@@ -200,6 +197,7 @@ final class MapHandle {
         let region = MKCoordinateRegion(center: center!, span: .init(latitudeDelta: abs(a.latitude - b.latitude), longitudeDelta: abs(a.longitude - b.longitude)))
         self.region = region
         applyMe()
+        if final, trip != nil, map.zoomLevel != dashZoom { drawRoutes() }
         onCamera?(region, final)
     }
 
@@ -399,24 +397,9 @@ final class MapHandle {
     // 전체: 자전거가 위. 대여/반납: 선택 도보가 위, 나머지 비활성
     func setTripView(_ v: TripView, animated: Bool = true) {
         view = v
-        guard let map, let t = trip, let route = map.getRouteManager().getRouteLayer(layerID: "route") else { return }
+        guard let map, let t = trip else { return }
         let labels = placeMarkers(t, v)
-        let (walkTo, bike, walkFrom): ((UInt, Int), (UInt, Int), (UInt, Int)) = switch v {
-        case .all: ((0, 1), (3, 2), (0, 1))
-        case .rent: ((1, 3), (4, 1), (2, 0))
-        case .ret: ((2, 0), (4, 1), (1, 3))
-        }
-        let old = (1...3).map { "trip-\(routeSeq)-\($0)" }
-        routeSeq += 1
-        var legs: [(Leg, (UInt, Int))] = [(t.bike, bike), (t.walkFrom, walkFrom)]
-        if t.near == .far { legs.append((t.walkTo, walkTo)) } // 50m 이하는 도보선 없음
-        for (i, (leg, st)) in legs.enumerated() {
-            let o = RouteOptions(routeID: "trip-\(routeSeq)-\(i + 1)", styleID: "trip", zOrder: st.1)
-            o.segments = [RouteSegment(points: leg.path.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) }, styleIndex: st.0)]
-            route.addRoute(option: o)?.show()
-        }
-        // 같은 ID로 지우고 바로 다시 넣으면 삭제 전이라 추가가 실패함 → 새 ID로 넣고 옛것 제거
-        if routeSeq > 1 { route.removeRoutes(routeIDs: old) }
+        drawRoutes()
         let fitPts: [CLLocationCoordinate2D] = switch v {
         case .all: t.allPoints
         case .rent: t.near == .far ? t.walkTo.path + [t.start.coordinate] : [t.origin.coordinate, t.start.coordinate]
@@ -437,12 +420,77 @@ final class MapHandle {
         fit(fitPts, animated: animated)
     }
 
+    // 도보 막대 길이는 화면 기준 10pt + 빈칸 6pt(선택 14 + 7). 줌이 바뀌면 다시 자름
+    @ObservationIgnored private var dashZoom = -1
+
+    private func drawRoutes() {
+        guard let map, let t = trip, let route = map.getRouteManager().getRouteLayer(layerID: "route") else { return }
+        dashZoom = map.zoomLevel
+        let r = map.viewRect
+        let mPerPt = r.height > 0 ? (region?.span.latitudeDelta ?? 0.02) * 111_000 / r.height : 1
+        enum Walk { case normal, selected, inactive }
+        let (to, from): (Walk, Walk) = switch view { case .all: (.normal, .normal); case .rent: (.selected, .inactive); case .ret: (.inactive, .selected) }
+        let z: (bike: Int, to: Int, from: Int) = switch view { case .all: (20, 10, 10); case .rent: (20, 30, 0); case .ret: (20, 0, 30) }
+        let old = (route.getAllRoutes() ?? []).map(\.routeID)
+        routeSeq += 1
+        var n = 0
+        func add(_ segs: [RouteSegment], z: Int) {
+            n += 1
+            let o = RouteOptions(routeID: "trip-\(routeSeq)-\(n)", styleID: "trip", zOrder: z)
+            o.segments = segs
+            route.addRoute(option: o)?.show()
+        }
+        let pts = { (c: [CLLocationCoordinate2D]) in c.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) } }
+        add([RouteSegment(points: pts(t.bike.path), styleIndex: view == .all ? 0 : 1)], z: z.bike)
+        func walkLeg(_ leg: Leg, _ w: Walk, _ z: Int) {
+            let sel = w == .selected
+            let (dash, gap): (Double, Double) = sel ? (14, 7) : (10, 6)
+            if w != .inactive { add([RouteSegment(points: pts(leg.path), styleIndex: sel ? 7 : 6)], z: z) }
+            let pieces = Self.dashes(leg.path, dash: dash * mPerPt, gap: gap * mPerPt)
+            let style: UInt = switch w { case .normal: 2; case .selected: 3; case .inactive: 4 }
+            add(pieces.map { RouteSegment(points: pts($0.points), styleIndex: $0.on ? style : 5) }, z: z + 1)
+        }
+        if t.near == .far { walkLeg(t.walkTo, to, z.to) } // 50m 이하는 도보선 없음
+        walkLeg(t.walkFrom, from, z.from)
+        // 같은 ID로 지우고 바로 다시 넣으면 삭제 전이라 추가가 실패함 → 새 ID로 넣고 옛것 제거
+        if !old.isEmpty { route.removeRoutes(routeIDs: old) }
+    }
+
+    // 경로를 막대(on)와 빈칸(off) 조각으로. 길이는 m
+    nonisolated static func dashes(_ path: [CLLocationCoordinate2D], dash: Double, gap: Double) -> [(points: [CLLocationCoordinate2D], on: Bool)] {
+        guard path.count > 1, dash > 0, gap > 0 else { return [(path, true)] }
+        var out: [(points: [CLLocationCoordinate2D], on: Bool)] = []
+        var cur = [path[0]], on = true, left = dash
+        for i in 1..<path.count {
+            var a = path[i - 1]
+            let b = path[i]
+            var seg = a.distance(to: b)
+            while seg > left {
+                let f = left / seg
+                let m = CLLocationCoordinate2D(latitude: a.latitude + (b.latitude - a.latitude) * f, longitude: a.longitude + (b.longitude - a.longitude) * f)
+                cur.append(m); out.append((cur, on))
+                on.toggle(); cur = [m]; seg -= left; a = m; left = on ? dash : gap
+            }
+            cur.append(b); left -= seg
+        }
+        if cur.count > 1 { out.append((cur, on)) }
+        return out
+    }
+
     // MARK: 이미지
 
     static func dot(_ d: CGFloat, _ color: UIColor) -> UIImage {
         let f = UIGraphicsImageRendererFormat(); f.scale = 2
         return UIGraphicsImageRenderer(size: .init(width: d, height: d), format: f).image { ctx in
             color.setFill(); ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: d, height: d))
+        }
+    }
+
+    // 경로 방향 = 이미지 가로축 (가로로 긴 캡슐)
+    static func dash(_ len: CGFloat, _ w: CGFloat, _ color: UIColor) -> UIImage {
+        let f = UIGraphicsImageRendererFormat(); f.scale = 2
+        return UIGraphicsImageRenderer(size: .init(width: len, height: w), format: f).image { _ in
+            color.setFill(); UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: len, height: w), cornerRadius: w / 2).fill()
         }
     }
 

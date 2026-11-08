@@ -123,6 +123,9 @@ extension Trip {
         assert(near(origin: a, station: at(10), isMyLocation: true, accuracy: 80) == .close)  // 정확도 나쁨
         assert(near(origin: a, station: at(10), isMyLocation: false, accuracy: 5) == .close)  // 검색한 출발지
         assert(near(origin: a, station: at(70), isMyLocation: true, accuracy: 5) == .far)
+        let line = MapHandle.dashes([a, at(100)], dash: 10, gap: 5)
+        // 10 5 10 5 ... 약 100m → 막대·빈칸 번갈아 13~14조각, 막대로 시작
+        assert(line.first?.on == true && (13...14).contains(line.count) && zip(line, line.dropFirst()).allSatisfy { $0.on != $1.on })
     }
 }
 
