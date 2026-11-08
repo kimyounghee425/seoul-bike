@@ -25,8 +25,16 @@ struct ResultView: View {
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
                 BackPill()
-                Pill(text: "\(model.originPlace?.name ?? "내 위치") → \(model.destination?.name ?? "")")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // 출발·도착을 누르면 검색 화면에서 그 칸을 바로 고칠 수 있게
+                HStack(spacing: 6) {
+                    Button(model.origin?.name ?? "내 위치") { model.path.append(.search(focus: .origin)) }
+                    Text("→")
+                    Button(model.destination?.name ?? "") { model.path.append(.search(focus: .destination)) }
+                }
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Token.Text.primary).lineLimit(1)
+                .padding(.horizontal, 16).frame(height: 44)
+                .background(Capsule().fill(.white)).shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 CompassButton(map: map)
             }
             .padding(.horizontal, 16)
@@ -42,7 +50,8 @@ struct ResultView: View {
                 panel
             }
         }
-        .task { await plan() }
+        // 출발지나 도착지가 바뀌어 돌아오면 다시 찾음
+        .task(id: routeKey) { await plan() }
         #if DEBUG
         .task { // 스크린샷용: -view 1|2
             try? await Task.sleep(for: .seconds(4))
@@ -53,6 +62,11 @@ struct ResultView: View {
 
     // 위 헤더, 아래 시트에 가리지 않게 경로 맞춤 여백. 라벨 폭은 MapHandle이 뷰별로 더함
     private var margins: UIEdgeInsets { UIEdgeInsets(top: 120, left: 40, bottom: expanded ? 490 : 230, right: 40) }
+
+    private var routeKey: String {
+        let o = model.origin.map { "\($0.lat),\($0.lng)" } ?? "me"
+        return o + "|" + (model.destination.map { "\($0.lat),\($0.lng)" } ?? "")
+    }
 
     private var locationKey: String {
         "\(model.location.coordinate?.latitude ?? 0),\(model.location.coordinate?.longitude ?? 0),\(model.location.heading ?? -1)"
