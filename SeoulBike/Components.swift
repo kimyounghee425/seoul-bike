@@ -494,3 +494,15 @@ struct RouteChip: View {
         .buttonStyle(.plain)
     }
 }
+
+
+// 대여 핀 오른쪽 위 자전거 수 배지 (대여·반납 보기). 피그마에 없던 요소, 라벨 칩과 같은 색 체계
+struct BikeBadge: View {
+    let count: Int
+    var body: some View {
+        Text("\(count)").font(.system(size: 11, weight: .bold)).foregroundStyle(Token.Brand.greenDeep)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+            .background(Capsule().fill(.white)).overlay(Capsule().stroke(Token.Brand.green, lineWidth: 1.5))
+            .fixedSize()
+    }
+}

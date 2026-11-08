@@ -373,12 +373,33 @@ final class MapHandle {
                 Self.render(LabeledPin(pin: pin, pinSize: size, headCenterY: head, label: label, labelOnLeft: left))
             }
         }
+        let same = t.near == .same
+        // 대여·반납 보기: 라벨이 도보 경로를 가려서 핀만 (이름은 강조된 시트 카드에). 대여 핀엔 자전거 수 배지
+        if v != .all {
+            func plain<P: View>(_ id: String, _ pin: P, size: CGSize, tip: CGPoint) {
+                style(id, anchor: { s in CGPoint(x: (pad + tip.x) / s.width, y: (pad + tip.y) / s.height) }) {
+                    Self.render(pin.frame(width: size.width, height: size.height).padding(pad))
+                }
+            }
+            let rentID = "\(same ? "combo" : "rent")-badge-\(t.start.bikes)"
+            if same { plain(rentID, ComboMarker().overlay(alignment: .topTrailing) { BikeBadge(count: t.start.bikes).offset(x: -2, y: 4) }, size: ComboMarker.size, tip: .init(x: 24, y: 24)) }
+            else { plain(rentID, RentPin().overlay(alignment: .topTrailing) { BikeBadge(count: t.start.bikes).offset(x: 0, y: 2) }, size: RentPin.size, tip: RentPin.tip) }
+            plain("ret-plain", ReturnPin(), size: ReturnPin.size, tip: ReturnPin.tip)
+            add("start", rentID, t.start.coordinate, rank: 3)
+            add("end", "ret-plain", t.end.coordinate, rank: 2)
+            style("dest-dot") { Self.render(DestDot().padding(6)) }
+            add("dest", "dest-dot", t.destination.coordinate, rank: 1)
+            if t.origin.name != "내 위치" {
+                style("origin-dot") { Self.render(DestDot(color: Token.Text.primary).padding(6)) }
+                add("origin", "origin-dot", t.origin.coordinate, rank: 1)
+            }
+            return (0, 0, sides)
+        }
         // 피그마 C1: 핀 머리 중심 대여 (22,20), 반납 (21,19), 복합 (24,24)
         // 전체 보기는 실제 경로가 넓으면 이름 라벨이 화면 끝에 잘려서 칩만 (이름은 시트 카드에)
         let compact = v == .all
         let rentLabel = PinLabel(chip: "대여", chipColor: Token.Brand.green, name: compact ? "" : t.start.name, bikes: t.start.bikes)
         let retLabel = PinLabel(chip: "반납", chipColor: Token.Marker.returnChip, name: compact ? "" : t.end.name)
-        let same = t.near == .same
         let rentID = "\(same ? "combo" : "rent")-\(t.start.id)-\(t.start.bikes)-\(sides.rentLeft)-\(compact)"
         if same { pinStyle(rentID, pin: ComboMarker(), size: ComboMarker.size, tip: .init(x: 24, y: 24), head: 24, label: rentLabel, left: sides.rentLeft) }
         else { pinStyle(rentID, pin: RentPin(), size: RentPin.size, tip: RentPin.tip, head: 20, label: rentLabel, left: sides.rentLeft) }
