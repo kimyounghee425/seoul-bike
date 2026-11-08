@@ -154,20 +154,14 @@ final class MapHandle {
         }
         let rm = map.getRouteManager()
         _ = rm.addRouteLayer(layerID: "route", zOrder: 0)
-        // 피그마 "결과 화면 최종" 값 그대로: 도보 #FF7A2F 굵기 5 둥근 점 간격 10, 자전거 #12A15C 굵기 5 실선
-        // 대여·반납 뷰: 선택 도보 7, 나머지 도보 3 알파 0.3, 자전거는 그대로
-        // 점선은 패턴만 보여야 해서 바탕선 색은 투명
-        // 0 도보 / 1 자전거 / 2 도보 강조 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
+        // 도보 #FF7A2F 실선, 자전거 #12A15C 실선, 둘 다 굵기 5
+        // 대여·반납 뷰에서는 선택 안 된 도보만 투명도 0.3
+        // 0 도보 / 1 자전거 / 2 도보 선택 / 3 도보 흐림 / 4 자전거(대여·반납 뷰)
         let set = RouteStyleSet(styleID: "trip")
         let orange = UIColor(Color.pinOrange), green = UIColor(Color.brand)
-        set.addPattern(RoutePattern(pattern: Self.dot(5, orange), distance: 10, symbol: nil, pinStart: false, pinEnd: false))
-        set.addPattern(RoutePattern(pattern: Self.dot(7, orange), distance: 14, symbol: nil, pinStart: false, pinEnd: false))
-        set.addPattern(RoutePattern(pattern: Self.dot(3, orange.withAlphaComponent(0.3)), distance: 6, symbol: nil, pinStart: false, pinEnd: false))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: .clear, level: 0, patternIndex: 0)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, level: 0)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 7, color: .clear, level: 0, patternIndex: 1)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 3, color: .clear, level: 0, patternIndex: 2)]))
-        set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: 5, color: green, level: 0)]))
+        for (w, c) in [(5, orange), (5, green), (5, orange), (5, orange.withAlphaComponent(0.3)), (5, green)] {
+            set.addStyle(RouteStyle(styles: [PerLevelRouteStyle(width: UInt(w), color: c, level: 0)]))
+        }
         rm.addRouteStyleSet(set)
         if margins != .zero { map.setMargins(margins) }
         // 지도 뜨기 전 들어온 이동 요청 (addViews 전에 못 받았을 수 있음)
@@ -376,15 +370,6 @@ final class MapHandle {
         let r = ImageRenderer(content: v)
         r.scale = 2 // SDK는 이미지 픽셀을 @2x 기준으로 그려서 화면 배율로 구우면 1.5배 커짐
         return r.uiImage
-    }
-
-    static func dot(_ d: CGFloat, _ color: UIColor) -> UIImage {
-        let s = CGSize(width: d, height: d)
-        let f = UIGraphicsImageRendererFormat(); f.scale = 2
-        return UIGraphicsImageRenderer(size: s, format: f).image { ctx in
-            color.setFill()
-            ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: s))
-        }
     }
 }
 
