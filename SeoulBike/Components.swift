@@ -476,3 +476,21 @@ struct LabeledPin<Pin: View>: View {
         .padding(Self.pad)
     }
 }
+
+
+// 피그마 컴포넌트 "경로 후보 칩". 선택: 연파랑 배경 + 파랑 bold / 기본: 흰 배경 + 회색 테두리 + 회색 medium
+struct RouteChip: View {
+    let text: String
+    let selected: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(text).font(.system(size: 14, weight: selected ? .bold : .medium))
+                .foregroundStyle(selected ? Token.Chip.selectedText : Token.Text.secondary)
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(Capsule().fill(selected ? Token.Chip.selectedBg : Token.Surface.base))
+                .overlay(Capsule().strokeBorder(selected ? Token.Chip.selectedBg : Token.Chip.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}

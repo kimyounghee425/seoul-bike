@@ -13,6 +13,12 @@ enum Token {
         static let walk = Color(hex: 0xFF7A2F)         // route/walk
         static let walkInactive = Color(hex: 0xFFC6A6) // route/walk-inactive
         static let casing = Color.white                 // route/casing
+        static let alternative = Color(hex: 0xA3ACB8)  // route/alternative
+    }
+    enum Chip {
+        static let selectedBg = Color(hex: 0xEAEFFD)   // chip/selected-bg
+        static let selectedText = Route.bike           // chip/selected-text
+        static let border = Surface.handle             // chip/border
     }
     enum Marker {
         static let location = Color(hex: 0x3182F6)   // marker/location

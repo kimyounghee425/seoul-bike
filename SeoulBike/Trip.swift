@@ -7,13 +7,18 @@ struct Trip {
     let start: Station
     let end: Station
     let walkTo: Leg
-    let bike: Leg
+    // 자전거 경로 후보 (피그마 "경로 후보"): 최단, 편안한 길, 자전거도로 순. 겹치면 앞 이름만 남김
+    struct BikeRoute { let name: String; let leg: Leg }
+    var options: [BikeRoute]
+    var selected = 0
+    var bike: Leg { options[selected].leg }
     let walkFrom: Leg
     // 출발지(내 위치)와 대여소 근접: same 복합 마커, close 마커 둘, 둘 다 도보선 없음 (피그마 C2 C3 C8)
     enum Near { case far, close, same }
     var near: Near = .far
 
     var allPoints: [CLLocationCoordinate2D] { walkTo.path + bike.path + walkFrom.path }
+    func minutes(with leg: Leg) -> Int { (near == .far ? walkTo.minutes : 0) + leg.minutes + walkFrom.minutes }
     var totalMinutes: Int { (near == .far ? walkTo.minutes : 0) + bike.minutes + walkFrom.minutes }
     var totalKm: String { String(format: "%.1fkm", Double(walkTo.meters + bike.meters + walkFrom.meters) / 1000) }
 
@@ -85,8 +90,11 @@ struct Trip {
         if s.id == e.id { throw PlanError.tooClose }
         async let w1 = Kakao.route(.walk, from: o.coordinate, to: s.coordinate)
         async let b = Kakao.route(.bicycle, from: s.coordinate, to: e.coordinate)
+        async let comfy = try? Kakao.route(.bicycle, from: s.coordinate, to: e.coordinate, bikeMode: "ACCESSIBLE")
+        async let lane = try? Kakao.route(.bicycle, from: s.coordinate, to: e.coordinate, bikeMode: "BIKE_ONLY")
         async let w2 = Kakao.route(.walk, from: e.coordinate, to: d.coordinate)
-        var t = try await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, bike: b, walkFrom: w2)
+        let options = mergedOptions([("최단", try await b), ("편안한 길", await comfy), ("자전거도로", await lane)])
+        var t = try await Trip(origin: o, destination: d, start: s, end: e, walkTo: w1, options: options, walkFrom: w2)
         t.near = near(origin: o.coordinate, station: s.coordinate, isMyLocation: model.origin == nil, accuracy: model.location.accuracy)
         return t
     }
@@ -101,6 +109,17 @@ extension Trip {
         return d <= min(max(15, acc), 30) ? .same : .close
     }
 
+    // 거리 차 20m, 시간 차 30초 안이면 같은 경로로 보고 앞의 것만 남김. 최단 실패는 위에서 throw, 나머지 실패는 빠짐
+    static func mergedOptions(_ list: [(String, Leg?)]) -> [BikeRoute] {
+        var out: [BikeRoute] = []
+        for (name, leg) in list {
+            guard let leg else { continue }
+            if out.contains(where: { abs($0.leg.meters - leg.meters) <= 20 && abs($0.leg.seconds - leg.seconds) <= 30 }) { continue }
+            out.append(BikeRoute(name: name, leg: leg))
+        }
+        return out
+    }
+
     // assert 기반 자체 점검
     static func selfCheck() {
         func trip(_ min: Int) -> Trip {
@@ -108,7 +127,7 @@ extension Trip {
             let st = Station(id: "", name: "", coordinate: .init(), bikes: 1)
             let z = Leg(path: [], meters: 0, seconds: 0)
             return Trip(origin: p, destination: p, start: st, end: st, walkTo: z,
-                        bike: Leg(path: [], meters: 0, seconds: min * 60), walkFrom: z)
+                        options: [BikeRoute(name: "최단", leg: Leg(path: [], meters: 0, seconds: min * 60))], walkFrom: z)
         }
         assert(trip(14).pass.title.hasPrefix("1시간권"))
         assert(trip(55).pass.title.hasPrefix("1시간권"))
@@ -123,6 +142,10 @@ extension Trip {
         assert(near(origin: a, station: at(10), isMyLocation: true, accuracy: 80) == .close)  // 정확도 나쁨
         assert(near(origin: a, station: at(10), isMyLocation: false, accuracy: 5) == .close)  // 검색한 출발지
         assert(near(origin: a, station: at(70), isMyLocation: true, accuracy: 5) == .far)
+        let leg = { (m: Int, s: Int) in Leg(path: [], meters: m, seconds: s) }
+        let merged = mergedOptions([("최단", leg(2159, 460)), ("편안한 길", leg(2347, 618)), ("자전거도로", leg(2347, 618))])
+        assert(merged.map(\.name) == ["최단", "편안한 길"]) // 성수 실측: 편안한 길 = 자전거도로
+        assert(mergedOptions([("최단", leg(1000, 300)), ("편안한 길", nil), ("자전거도로", leg(1010, 320))]).count == 1)
         let line = MapHandle.dashes([a, at(100)], dash: 10, gap: 5)
         // 10 5 10 5 ... 약 100m → 막대·빈칸 번갈아 13~14조각, 막대로 시작
         assert(line.first?.on == true && (13...14).contains(line.count) && zip(line, line.dropFirst()).allSatisfy { $0.on != $1.on })

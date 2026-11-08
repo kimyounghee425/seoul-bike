@@ -39,7 +39,7 @@ enum Kakao {
 
     enum Mode: String { case bicycle, walk }
 
-    static func route(_ mode: Mode, from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) async throws -> Leg {
+    static func route(_ mode: Mode, from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D, bikeMode: String = "SHORTEST") async throws -> Leg {
         // 30m 이내는 경로 API가 실패하므로 직선
         let m = a.distance(to: b)
         if m < 30 { return Leg(path: [a, b], meters: Int(m), seconds: Int(m / 1.2)) }
@@ -52,7 +52,7 @@ enum Kakao {
             let route: Route?
         }
         var q = ["start_x": "\(a.longitude)", "start_y": "\(a.latitude)", "end_x": "\(b.longitude)", "end_y": "\(b.latitude)"]
-        if mode == .bicycle { q["route_mode"] = "SHORTEST" }
+        if mode == .bicycle { q["route_mode"] = bikeMode }
         let r: R
         do { r = try await get("/v2/routing/\(mode.rawValue)", q) } catch let e as URLError { throw e } catch { throw Trip.PlanError.routeFailed }
         if let legs = r.route?.legs, !legs.isEmpty {

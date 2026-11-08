@@ -170,7 +170,8 @@ final class MapHandle {
                    PerLevelRouteStyle(width: 5, color: walkOff, level: 0),    // 4 도보 막대 비활성
                    PerLevelRouteStyle(width: 5, color: .clear, level: 0),     // 5 막대 사이 빈칸
                    PerLevelRouteStyle(width: 9, color: .white, level: 0),     // 6 도보 흰 바탕
-                   PerLevelRouteStyle(width: 12, color: .white, level: 0)] {  // 7 도보 흰 바탕 선택
+                   PerLevelRouteStyle(width: 12, color: .white, level: 0),    // 7 도보 흰 바탕 선택
+                   PerLevelRouteStyle(width: 6, color: UIColor(Token.Route.alternative), strokeWidth: 3, strokeColor: .white, level: 0)] { // 8 후보 회색 (피그마 6 + 케이싱 11)
             set.addStyle(RouteStyle(styles: [st]))
         }
         rm.addRouteStyleSet(set)
@@ -402,6 +403,14 @@ final class MapHandle {
         return (w(rentLabel), w(retLabel), sides)
     }
 
+    // 후보만 바뀜: 대여소·도보·마커는 그대로라 경로만 다시
+    func selectBikeRoute(_ i: Int) {
+        guard var t = trip, t.options.indices.contains(i) else { return }
+        t.selected = i
+        trip = t
+        drawRoutes()
+    }
+
     // 구간마다 경로를 따로 그려 겹칠 때 위아래 순서를 정함
     // 전체: 자전거가 위. 대여/반납: 선택 도보가 위, 나머지 비활성
     func setTripView(_ v: TripView, animated: Bool = true) {
@@ -459,6 +468,12 @@ final class MapHandle {
             route.addRoute(option: o)?.show()
         }
         let pts = { (c: [CLLocationCoordinate2D]) in c.map { MapPoint(longitude: $0.longitude, latitude: $0.latitude) } }
+        // 비선택 후보는 전체 보기에서만 회색으로, 선택 경로 아래
+        if view == .all {
+            for (i, o) in t.options.enumerated() where i != t.selected {
+                add([RouteSegment(points: pts(o.leg.path), styleIndex: 8)], z: z.bike - 5)
+            }
+        }
         add([RouteSegment(points: pts(t.bike.path), styleIndex: view == .all ? 0 : 1)], z: z.bike)
         func walkLeg(_ leg: Leg, _ w: Walk, _ z: Int) {
             let sel = w == .selected

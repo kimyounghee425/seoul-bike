@@ -67,6 +67,7 @@ struct ResultView: View {
         .task { // 스크린샷용: -view 1|2
             try? await Task.sleep(for: .seconds(4))
             if let v = UserDefaults.standard.string(forKey: "view").flatMap(Int.init) { view = v }
+            if let r = UserDefaults.standard.string(forKey: "route").flatMap(Int.init) { select(r) }
             if UserDefaults.standard.string(forKey: "sheet") == "0" { withAnimation(Self.sheetSpring) { expanded = false } }
         }
         #endif
@@ -91,7 +92,18 @@ struct ResultView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(t.totalMinutes)분 걸려요").font(.system(size: 26, weight: .bold)).foregroundStyle(Token.Text.primary)
                     Text("걷기 \(t.walkMinutes)분 포함").font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
-                } // 핸들 아래 20은 BottomPanel이 줌
+                } // 핸들 아래 20은 BottomPanel이 줌, 칩이 있으면 16
+                .padding(.top, chips ? -4 : 0)
+                // 경로 후보가 2개 이상일 때만. 접혀도 보이게 접히는 부분 밖에 둠
+                if chips {
+                    HStack(spacing: 6) {
+                        ForEach(t.options.indices, id: \.self) { i in
+                            let o = t.options[i]
+                            RouteChip(text: "\(o.name) \(t.minutes(with: o.leg))분", selected: i == t.selected) { select(i) }
+                        }
+                    }
+                    .padding(.top, 14)
+                }
                 // 접히는 부분: 늘 그려두고 보이는 높이만 손가락 따라 줄임 (끼워넣기·빼기 대신 클리핑)
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(spacing: 10) {
@@ -103,7 +115,7 @@ struct ResultView: View {
                             Fact(icon: .walk, text: "목적지까지 걸어서 \(t.walkFrom.minutes)분")
                         } action: { view = view == 2 ? 0 : 2 }
                     }
-                    .padding(.top, 16)
+                    .padding(.top, chips ? 12 : 16)
                     HStack(spacing: 6) {
                         Fact(icon: .bike, text: "자전거 \(t.bike.minutes)분,", iconColor: Token.Text.secondary, textColor: Token.Text.secondary)
                         Text(t.passLine).font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
@@ -115,7 +127,8 @@ struct ResultView: View {
                 .frame(height: foldShown, alignment: .top)
                 .clipped()
                 .opacity(foldHeight > 0 ? Double(foldShown / foldHeight) : 1)
-                PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, 16)
+                PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, chips ? 12 : 16)
+                    .padding(.bottom, chips ? -10 : 0)
             } else if let error {
                 Text(error.title).font(.system(size: 22, weight: .bold)).foregroundStyle(Color.grey900)
                 Text(error.detail).font(.system(size: 15)).foregroundStyle(Color.grey500).lineSpacing(3).padding(.top, 6)
@@ -152,6 +165,15 @@ struct ResultView: View {
                     drag = 0
                 }
             })
+    }
+
+    private var chips: Bool { (trip?.options.count ?? 0) > 1 }
+
+    private func select(_ i: Int) {
+        guard var t = trip, i != t.selected else { return }
+        t.selected = i
+        withAnimation(.snappy(duration: 0.2)) { trip = t }
+        map.selectBikeRoute(i)
     }
 
     static let sheetSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
