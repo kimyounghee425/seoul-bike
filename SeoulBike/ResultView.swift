@@ -7,6 +7,7 @@ struct ResultView: View {
     @State private var trip: Trip?
     @State private var error: Trip.PlanError?
     @State private var expanded = true
+    @State private var refitTask: Task<Void, Never>?
     @State private var view = 0 // 0 전체 1 대여 2 반납
 
     var body: some View {
@@ -21,7 +22,15 @@ struct ResultView: View {
         .onChange(of: map.ready) { _, ready in if ready, let t = trip { map.setTrip(t) } }
         .onChange(of: view) { _, v in map.setTripView(.init(rawValue: v) ?? .all) }
         // 시트를 접으면 지도가 넓어지니 경로를 다시 맞춤
-        .onChange(of: expanded) { _, _ in map.setMargins(margins); map.setTripView(map.view) }
+        .onChange(of: expanded) { _, _ in
+            refitTask?.cancel()
+            refitTask = Task {
+                try? await Task.sleep(for: .milliseconds(350)) // 시트 애니메이션(.snappy) 끝난 뒤
+                guard !Task.isCancelled else { return }
+                map.setMargins(margins)
+                map.refit()
+            }
+        }
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
                 BackPill()

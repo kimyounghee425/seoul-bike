@@ -142,6 +142,7 @@ final class MapHandle {
     @ObservationIgnored private var pendingTrip: Trip??
     @ObservationIgnored private var trip: Trip?
     @ObservationIgnored private var routeSeq = 0
+    @ObservationIgnored private var labelWidths: [String: CGFloat] = [:]
     @ObservationIgnored private var hideMe = false // 복합 마커일 때 내 위치 점 숨김
     private(set) var view: TripView = .all
     @ObservationIgnored private var pendingPin: CLLocationCoordinate2D??
@@ -192,10 +193,12 @@ final class MapHandle {
         let c = map.getPosition(CGPoint(x: r.midX, y: r.midY)).wgsCoord
         let a = map.getPosition(CGPoint(x: r.minX, y: r.minY)).wgsCoord
         let b = map.getPosition(CGPoint(x: r.maxX, y: r.maxY)).wgsCoord
-        center = .init(latitude: c.latitude, longitude: c.longitude)
-        rotation = map.rotationAngle
-        let region = MKCoordinateRegion(center: center!, span: .init(latitudeDelta: abs(a.latitude - b.latitude), longitudeDelta: abs(a.longitude - b.longitude)))
-        self.region = region
+        let newCenter = CLLocationCoordinate2D(latitude: c.latitude, longitude: c.longitude)
+        // 같은 값이면 대입 안 함: @Observable은 같은 값 대입에도 화면을 다시 그림
+        if center.map({ $0.distance(to: newCenter) > 0.5 }) ?? true { center = newCenter }
+        if abs(rotation - map.rotationAngle) > 0.001 { rotation = map.rotationAngle }
+        let region = MKCoordinateRegion(center: newCenter, span: .init(latitudeDelta: abs(a.latitude - b.latitude), longitudeDelta: abs(a.longitude - b.longitude)))
+        if final { self.region = region }
         applyMe()
         if final, trip != nil, map.zoomLevel != dashZoom { drawRoutes() }
         onCamera?(region, final)
@@ -389,7 +392,13 @@ final class MapHandle {
             style("origin-dot") { Self.render(DestDot(color: Token.Text.primary).padding(6)) }
             add("origin", "origin-dot", t.origin.coordinate, rank: 1)
         }
-        let w = { (l: PinLabel) in (Self.render(l)?.size.width ?? 200) + 10 }
+        let w = { (l: PinLabel) -> CGFloat in
+            let key = "\(l.chip)|\(l.name)|\(l.bikes ?? -1)"
+            if let c = self.labelWidths[key] { return c }
+            let v = (Self.render(l)?.size.width ?? 200) + 10
+            self.labelWidths[key] = v
+            return v
+        }
         return (w(rentLabel), w(retLabel), sides)
     }
 
@@ -398,8 +407,17 @@ final class MapHandle {
     func setTripView(_ v: TripView, animated: Bool = true) {
         view = v
         guard let map, let t = trip else { return }
-        let labels = placeMarkers(t, v)
+        labels = placeMarkers(t, v)
         drawRoutes()
+        refit(animated: animated)
+    }
+
+    @ObservationIgnored private var labels: (rentW: CGFloat, retW: CGFloat, sides: (rentLeft: Bool, retLeft: Bool)) = (0, 0, (false, false))
+
+    // 카메라만 다시 맞춤 (시트 접고 펼 때). 마커·경로는 그대로
+    func refit(animated: Bool = true) {
+        guard let map, let t = trip else { return }
+        let v = view
         let fitPts: [CLLocationCoordinate2D] = switch v {
         case .all: t.allPoints
         case .rent: t.near == .far ? t.walkTo.path + [t.start.coordinate] : [t.origin.coordinate, t.start.coordinate]
