@@ -7,6 +7,8 @@ struct ResultView: View {
     @State private var trip: Trip?
     @State private var error: Trip.PlanError?
     @State private var expanded = true
+    @State private var drag: CGFloat = 0       // 끄는 중인 세로 이동
+    @State private var foldHeight: CGFloat = 0 // 접히는 부분 원래 높이
     @State private var refitTask: Task<Void, Never>?
     @State private var view = 0 // 0 전체 1 대여 2 반납
 
@@ -25,7 +27,7 @@ struct ResultView: View {
         .onChange(of: expanded) { _, _ in
             refitTask?.cancel()
             refitTask = Task {
-                try? await Task.sleep(for: .milliseconds(350)) // 시트 애니메이션(.snappy) 끝난 뒤
+                try? await Task.sleep(for: .milliseconds(380)) // 시트 스프링 끝난 뒤
                 guard !Task.isCancelled else { return }
                 map.setMargins(margins)
                 map.refit()
@@ -65,6 +67,7 @@ struct ResultView: View {
         .task { // 스크린샷용: -view 1|2
             try? await Task.sleep(for: .seconds(4))
             if let v = UserDefaults.standard.string(forKey: "view").flatMap(Int.init) { view = v }
+            if UserDefaults.standard.string(forKey: "sheet") == "0" { withAnimation(Self.sheetSpring) { expanded = false } }
         }
         #endif
     }
@@ -89,7 +92,8 @@ struct ResultView: View {
                     Text("\(t.totalMinutes)분 걸려요").font(.system(size: 26, weight: .bold)).foregroundStyle(Token.Text.primary)
                     Text("걷기 \(t.walkMinutes)분 포함").font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
                 } // 핸들 아래 20은 BottomPanel이 줌
-                if expanded {
+                // 접히는 부분: 늘 그려두고 보이는 높이만 손가락 따라 줄임 (끼워넣기·빼기 대신 클리핑)
+                VStack(alignment: .leading, spacing: 0) {
                     VStack(spacing: 10) {
                         PlaceCard(label: "빌릴 곳", name: t.start.name, selected: view == 1) {
                             Fact(icon: .walk, text: t.near == .far ? "걸어서 \(t.walkTo.minutes)분" : "바로 앞이에요")
@@ -105,8 +109,12 @@ struct ResultView: View {
                         Text(t.passLine).font(.system(size: 14)).foregroundStyle(Token.Text.secondary)
                     }
                     .padding(.top, 14).padding(.bottom, 2).padding(.leading, 4)
-                    .transition(.opacity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { foldHeight = $0 }
+                .frame(height: foldShown, alignment: .top)
+                .clipped()
+                .opacity(foldHeight > 0 ? Double(foldShown / foldHeight) : 1)
                 PrimaryButton(title: "따릉이 앱 열기") { openBikeSeoul() }.padding(.top, 16)
             } else if let error {
                 Text(error.title).font(.system(size: 22, weight: .bold)).foregroundStyle(Color.grey900)
@@ -126,13 +134,34 @@ struct ResultView: View {
                 .frame(maxWidth: .infinity, minHeight: 120)
             }
         }
-        // 손잡이 탭 또는 위아래로 끌어서 접기/펼치기, 접으면 제목·요약·버튼만
+        // 끄는 동안 시트가 손가락을 따라오고, 놓으면 속도까지 보고 접힘·펼침을 정함. 손잡이 쪽 탭으로도 토글
         .contentShape(Rectangle())
-        .onTapGesture { if trip != nil { withAnimation(.snappy) { expanded.toggle() } } }
-        .gesture(DragGesture(minimumDistance: 20).onEnded { v in
-            guard trip != nil else { return }
-            withAnimation(.snappy) { expanded = v.translation.height < 0 }
-        })
+        .onTapGesture { if trip != nil { withAnimation(Self.sheetSpring) { expanded.toggle() } } }
+        .gesture(DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { v in
+                guard trip != nil else { return }
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { drag = v.translation.height }
+            }
+            .onEnded { v in
+                guard trip != nil else { return }
+                // 놓은 순간 속도로 더 간 위치를 예측해서 절반 기준
+                let shownAtEnd = (expanded ? foldHeight : 0) - v.predictedEndTranslation.height
+                withAnimation(Self.sheetSpring) {
+                    expanded = shownAtEnd > foldHeight / 2
+                    drag = 0
+                }
+            })
+    }
+
+    static let sheetSpring = Animation.spring(response: 0.38, dampingFraction: 0.86)
+
+    // 지금 보이는 접히는 부분 높이. 끝을 넘으면 고무줄처럼 덜 늘어남
+    private var foldShown: CGFloat {
+        let raw = (expanded ? foldHeight : 0) - drag
+        if raw < 0 { return 0 }
+        if raw > foldHeight { return foldHeight + (raw - foldHeight) * 0.15 }
+        return raw
     }
 
     private func handle(_ e: Trip.PlanError) {
